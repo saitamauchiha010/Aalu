@@ -37,7 +37,7 @@ FORCE_GROUP2_LINK      = "https://t.me/+cePuY51FkgE5MzY1"
 #                     MONGODB SETUP
 # ============================================================
 
-client = MongoClient(MONGO_URI)
+client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
 db     = client["numbot"]
 users  = db["users"]
 
