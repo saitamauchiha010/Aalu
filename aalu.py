@@ -21,7 +21,7 @@ ADMIN_ID     = 6131370190
 MONGO_URI    = "mongodb+srv://saitamauchiha01025_db_user:yMvHQKjjRpFsgDxz@cluster0.fomymln.mongodb.net/?appName=Cluster0"
 
 # Credit Settings
-START_CREDITS = 4
+START_CREDITS = 2
 REFER_CREDITS = 2
 
 # Mode: dual / group / private / maintenance
@@ -179,7 +179,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     unlimited_note = "\n♾️ Unlimited Mode is currently ON — searches are free!\n" if UNLIMITED_MODE else ""
-    welcome = "🎉 Welcome! You received 4 free credits!\n\n" if is_new else "👋 Welcome back!\n\n"
+    welcome = "🎉 Welcome! You received 2 free credits!\n\n" if is_new else "👋 Welcome back!\n\n"
     msg = (
         f"{welcome}"
         f"{unlimited_note}"
@@ -238,7 +238,7 @@ async def process_number(update, context, number):
             await update.message.reply_text(
                 "❌ You have 0 credits!\n\n"
                 "Refer friends to earn more credits or buy credits.\n"
-                "Use 🔗 Refer button to get your refer link."
+                "Use 🔗 Refer button to get your refer link or dm @DarkGalaxxyy to buy credits."
             )
             return
 
@@ -536,6 +536,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/createvoucher <code> <credits> <max_uses>\n"
             "/deletevoucher <code>\n"
             "/listvouchers\n"
+            "/referstat\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         return
