@@ -5,20 +5,24 @@ import string
 import certifi
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, LabeledPrice
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PreCheckoutQueryHandler, ContextTypes, filters
 from telegram.error import BadRequest
 
 # ============================================================
 #                     CONFIGURATION
 # ============================================================
 
-API_URL      = "num.zvx.workers.dev/?key=DxD&mobile={}"
-BOT_TOKEN    = "8693982920:AAH_fwloRRWwRCgNyYyVNeZlY1PoVcyPcG0"
-BOT_USERNAME = "Gamcchhaa_Bot"
-CUSTOM_NAME  = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
-ADMIN_ID     = 6131370190
-MONGO_URI    = "mongodb+srv://saitamauchiha01025_db_user:yMvHQKjjRpFsgDxz@cluster0.fomymln.mongodb.net/?appName=Cluster0"
+API_URL          = "num.zvx.workers.dev/?key=DxD&mobile={}"
+BOT_TOKEN        = "8693982920:AAH_fwloRRWwRCgNyYyVNeZlY1PoVcyPcG0"
+BOT_USERNAME     = "Gamcchhaa_Bot"
+CUSTOM_NAME      = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
+ADMIN_ID         = 6131370190
+MONGO_URI        = "mongodb+srv://saitamauchiha01025_db_user:yMvHQKjjRpFsgDxz@cluster0.fomymln.mongodb.net/?appName=Cluster0"
+PAYOUT_CHANNEL   = -1003579822719
+UPI_ID           = "darkgalaxxyyy@naviaxis"
+UPI_QR_LINK      = "https://t.me/jaiwkwkwkkwkwkjwkq/2"
+STARS_PER_CREDIT = 2   # 1 star = 2 credits (so user pays stars, gets 2x credits)
 
 # Credit Settings
 START_CREDITS = 2
@@ -98,13 +102,14 @@ def get_main_keyboard(user_id):
         keyboard = [
             [KeyboardButton("🔍 Search Number"), KeyboardButton("👤 My Account")],
             [KeyboardButton("💰 Credits"),        KeyboardButton("🔗 Refer")],
-            [KeyboardButton("💳 Buy Credits"),    KeyboardButton("⚙️ Admin Panel")],
+            [KeyboardButton("💳 Buy Credits"),    KeyboardButton("❓ Help")],
+            [KeyboardButton("⚙️ Admin Panel")],
         ]
     else:
         keyboard = [
             [KeyboardButton("🔍 Search Number"), KeyboardButton("👤 My Account")],
             [KeyboardButton("💰 Credits"),        KeyboardButton("🔗 Refer")],
-            [KeyboardButton("💳 Buy Credits")],
+            [KeyboardButton("💳 Buy Credits"),    KeyboardButton("❓ Help")],
         ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -166,7 +171,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_new:
         user = await create_user(user_id, referred_by)
 
-    # Update username
     if username:
         await users.update_one({"user_id": user_id}, {"$set": {"username": username}})
 
@@ -179,7 +183,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     unlimited_note = "\n♾️ Unlimited Mode is currently ON — searches are free!\n" if UNLIMITED_MODE else ""
-    welcome = "🎉 Welcome! You received 2 free credits!\n\n" if is_new else "👋 Welcome back!\n\n"
+    welcome = f"🎉 Welcome! You received {START_CREDITS} free credits!\n\n" if is_new else "👋 Welcome back!\n\n"
     msg = (
         f"{welcome}"
         f"{unlimited_note}"
@@ -232,7 +236,6 @@ async def process_number(update, context, number):
     if user is None:
         user = await create_user(user_id)
 
-    # Skip credit check if unlimited mode is ON
     if not UNLIMITED_MODE:
         if user["credits"] <= 0:
             await update.message.reply_text(
@@ -253,7 +256,6 @@ async def process_number(update, context, number):
             await update.message.reply_text("❌ No result found for this number.")
             return
 
-        # Deduct credit only if not unlimited
         if UNLIMITED_MODE:
             credit_note = "♾️ Unlimited Mode ON — no credits deducted"
         else:
@@ -292,7 +294,7 @@ async def num(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def referstat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top_users = await users.find(
-        {"referrals": {"$gt": 0}},
+        {"referrals": {"$gt": 0}, "user_id": {"$ne": ADMIN_ID}},
         {"username": 1, "user_id": 1, "referrals": 1}
     ).sort("referrals", -1).limit(10).to_list(length=10)
 
@@ -320,16 +322,13 @@ async def createvoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
         await update.message.reply_text("📌 Usage: /createvoucher <code> <credits> <max_uses>\nExample: /createvoucher SAVE50 50 100")
         return
-
     code     = context.args[0].upper()
     credits  = int(context.args[1])
     max_uses = int(context.args[2])
-
     existing = await vouchers.find_one({"code": code})
     if existing:
         await update.message.reply_text(f"❌ Voucher code '{code}' already exists.")
         return
-
     await vouchers.insert_one({
         "code"    : code,
         "credits" : credits,
@@ -347,14 +346,11 @@ async def createvoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if not context.args:
         await update.message.reply_text("📌 Usage: /redeem <code>\nExample: /redeem SAVE50")
         return
-
     code    = context.args[0].upper()
     voucher = await vouchers.find_one({"code": code})
-
     if not voucher:
         await update.message.reply_text("❌ Invalid voucher code.")
         return
@@ -364,14 +360,11 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in voucher["used_by"]:
         await update.message.reply_text("❌ You have already redeemed this voucher.")
         return
-
-    # Apply voucher
     await vouchers.update_one(
         {"code": code},
         {"$inc": {"uses": 1}, "$push": {"used_by": user_id}}
     )
     new_balance = await update_credits(user_id, voucher["credits"])
-
     await update.message.reply_text(
         f"🎉 Voucher Redeemed Successfully!\n\n"
         f"💰 Credits Added: {voucher['credits']}\n"
@@ -408,6 +401,51 @@ async def listvouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 # ============================================================
+#                     TELEGRAM STARS PAYMENT
+# ============================================================
+
+async def buystars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            "⭐ Buy Credits with Telegram Stars\n\n"
+            "Usage: /buystars <stars>\n"
+            "Example: /buystars 10 → you get 20 credits\n\n"
+            f"Rate: 1 ⭐ = {STARS_PER_CREDIT} credits"
+        )
+        return
+
+    stars   = int(context.args[0])
+    credits = stars * STARS_PER_CREDIT
+
+    await update.message.reply_invoice(
+        title="Buy Credits",
+        description=f"Purchase {credits} credits for {stars} Telegram Stars",
+        payload=f"stars_{stars}_{update.effective_user.id}",
+        currency="XTR",
+        prices=[LabeledPrice(label=f"{credits} Credits", amount=stars)],
+    )
+
+
+async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.pre_checkout_query
+    await query.answer(ok=True)
+
+
+async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    payment = update.message.successful_payment
+    stars   = payment.total_amount
+    credits = stars * STARS_PER_CREDIT
+
+    new_balance = await update_credits(user_id, credits)
+    await update.message.reply_text(
+        f"✅ Payment Successful!\n\n"
+        f"⭐ Stars Paid: {stars}\n"
+        f"💰 Credits Added: {credits}\n"
+        f"💳 New Balance: {new_balance}"
+    )
+
+# ============================================================
 #                     BUTTON HANDLERS
 # ============================================================
 
@@ -416,6 +454,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bot     = context.bot
 
+    # ── Search Number ──
     if text == "🔍 Search Number":
         joined = await force_join_check(bot, user_id)
         if not joined:
@@ -433,6 +472,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📲 Please enter the number you want to search:")
         return
 
+    # ── Waiting for number ──
     if context.user_data.get("waiting_for_number"):
         context.user_data["waiting_for_number"] = False
         if text.isdigit():
@@ -441,6 +481,17 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid number. Please enter digits only.")
         return
 
+    # ── Waiting for UPI screenshot ──
+    if context.user_data.get("waiting_for_screenshot"):
+        context.user_data["waiting_for_screenshot"] = False
+        await update.message.reply_text(
+            "⏳ Payment request submitted!\n\n"
+            "Please wait for admin approval.\n"
+            "Credits will be added once verified."
+        )
+        return
+
+    # ── My Account ──
     if text == "👤 My Account":
         user = await get_user(user_id)
         if user is None:
@@ -457,6 +508,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ── Credits ──
     if text == "💰 Credits":
         unlimited_note = "\n♾️ Unlimited Mode is currently ON — searches are FREE for everyone!" if UNLIMITED_MODE else ""
         await update.message.reply_text(
@@ -468,14 +520,14 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• New users get {START_CREDITS} free credits\n"
             f"• Refer a friend → earn {REFER_CREDITS} credits\n"
             "• Redeem a voucher → /redeem <code>\n"
-            "• Buy credits → ₹1 = 1 credit\n\n"
-            "Use 🔗 Refer or 💳 Buy Credits buttons!\n"
+            "• Buy via UPI or Telegram Stars → 💳 Buy Credits\n\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         return
 
+    # ── Refer ──
     if text == "🔗 Refer":
-        user     = await get_user(user_id)
+        user = await get_user(user_id)
         if user is None:
             user = await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
@@ -490,24 +542,53 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ── Buy Credits ──
     if text == "💳 Buy Credits":
+        username = update.effective_user.username
+        uname    = f"@{username}" if username else f"User {user_id}"
+        keyboard = [
+            [InlineKeyboardButton("📸 I've Paid via UPI", callback_data="upi_paid")],
+        ]
+        await update.message.reply_photo(
+            photo=UPI_QR_LINK,
+            caption=(
+                "💳 Buy Credits\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                "💵 Rate: ₹1 = 1 Credit\n\n"
+                "📌 Pay via UPI:\n"
+                f"UPI ID: `{UPI_ID}`\n\n"
+                "After payment, send your screenshot here.\n"
+                "Admin will verify and add credits.\n\n"
+                "⭐ Or buy with Telegram Stars:\n"
+                f"/buystars <amount> (1 star = {STARS_PER_CREDIT} credits)\n"
+                "━━━━━━━━━━━━━━━━━━━━"
+            ),
+            parse_mode="Markdown"
+        )
+        context.user_data["waiting_for_screenshot"] = True
+        context.user_data["pending_upi_user_id"]    = user_id
+        context.user_data["pending_upi_username"]   = uname
+        await update.message.reply_text("📸 Send your payment screenshot now:")
+        return
+
+    # ── Help ──
+    if text == "❓ Help":
         await update.message.reply_text(
-            "💳 Buy Credits\n"
+            "❓ Help & Support\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "💵 Rate: ₹1 = 1 Credit\n\n"
-            "To purchase credits, contact:\n"
+            "For any issues or queries, contact:\n\n"
             "👤 @DarkGalaxxyy\n\n"
-            f"Your User ID: {user_id}\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         return
 
+    # ── Admin Panel ──
     if text == "⚙️ Admin Panel":
         if user_id != ADMIN_ID:
             await update.message.reply_text("❌ Access Denied.")
             return
-        total_users   = await users.count_documents({})
-        total_credits = 0
+        total_users    = await users.count_documents({})
+        total_credits  = 0
         async for u in users.find({}, {"credits": 1}):
             total_credits += u["credits"]
         total_vouchers = await vouchers.count_documents({})
@@ -536,10 +617,45 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/createvoucher <code> <credits> <max_uses>\n"
             "/deletevoucher <code>\n"
             "/listvouchers\n"
-            "/referstat\n"
+            "/buystars <amount>\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         return
+
+
+# ── Handle screenshot (photo message) ──
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id  = update.effective_user.id
+    username = update.effective_user.username
+    uname    = f"@{username}" if username else f"User {user_id}"
+
+    if not context.user_data.get("waiting_for_screenshot"):
+        return
+
+    context.user_data["waiting_for_screenshot"] = False
+
+    # Forward screenshot to payouts channel with details
+    caption = (
+        "💳 New Payment Request\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 User ID: {user_id}\n"
+        f"📛 Username: {uname}\n"
+        f"📊 Status: Pending ⏳\n\n"
+        f"To approve: /addcredits {user_id} <amount>"
+    )
+
+    await context.bot.forward_message(
+        chat_id=PAYOUT_CHANNEL,
+        from_chat_id=update.effective_chat.id,
+        message_id=update.message.message_id
+    )
+    await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=caption)
+
+    await update.message.reply_text(
+        "✅ Screenshot received!\n\n"
+        "⏳ Please wait for admin approval.\n"
+        "Credits will be added once payment is verified."
+    )
 
 # ============================================================
 #                     ADMIN COMMANDS
@@ -602,8 +718,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Access Denied.")
         return
-    total_users   = await users.count_documents({})
-    total_credits = 0
+    total_users    = await users.count_documents({})
+    total_credits  = 0
     async for u in users.find({}, {"credits": 1}):
         total_credits += u["credits"]
     total_vouchers = await vouchers.count_documents({})
@@ -705,7 +821,6 @@ async def setrefercredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     REFER_CREDITS = int(context.args[0])
     await update.message.reply_text(f"✅ Refer credits set to: {REFER_CREDITS}")
 
-
 # ============================================================
 #                     MAIN
 # ============================================================
@@ -716,6 +831,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("num",             num))
     app.add_handler(CommandHandler("referstat",       referstat))
     app.add_handler(CommandHandler("redeem",          redeem))
+    app.add_handler(CommandHandler("buystars",        buystars))
     app.add_handler(CommandHandler("createvoucher",   createvoucher))
     app.add_handler(CommandHandler("deletevoucher",   deletevoucher))
     app.add_handler(CommandHandler("listvouchers",    listvouchers))
@@ -729,6 +845,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("checkbalance",    checkbalance))
     app.add_handler(CommandHandler("setstartcredits", setstartcredits))
     app.add_handler(CommandHandler("setrefercredits", setrefercredits))
+    app.add_handler(PreCheckoutQueryHandler(precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     print("Bot is running...")
     app.run_polling()
