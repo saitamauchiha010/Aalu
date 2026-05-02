@@ -566,7 +566,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         status_keyboard = [[InlineKeyboardButton("✅ Mark as Done", callback_data=f"done_{order_id}_{user_id}_{amount}")]]
         await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, reply_markup=InlineKeyboardMarkup(status_keyboard))
-        await query.message.reply_text("✅ Payment request submitted!\n\nYour credits will be added after verification.")
+        await query.message.reply_text("✅ Payment request submitted!\n\nYour credits will be added after verification.\n\n Check Status @Siee1234_Payouts")
 
     elif data.startswith("done_"):
         parts    = data.split("_")
