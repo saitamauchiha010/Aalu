@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 from telegram.error import BadRequest
 
 # ============================================================
-#                     CONFIGURATION
+#                     kyaaaaCONFIGURATION
 # ============================================================
 
 API_URL         = "num.zvx.workers.dev/?key=DxD&mobile={}"
