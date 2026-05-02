@@ -286,7 +286,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buy_upi":
         context.user_data["upi_step"] = "enter_amount"
         await query.message.reply_text(
-            "📱 UPI Payment\n\n💵 Rate: ₹1 = 1 Credit\n\nPlease enter the amount you want to pay (in ₹):",
+            "📱 UPI Payment\n\n💵 Rate: ₹1 = 1 Credit\n\nPlease enter the amount you want to pay (without ₹):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_payment")]])
         )
 
@@ -328,7 +328,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await query.message.reply_text(
-            "✅ Payment request submitted!\n\nYour credits will be added after verification.\n\nCheck Payment Status @Siee123_Payouts"
+            "✅ Payment request submitted!\n\nYour credits will be added after verification.\n\nCheck Payment Status @Siee1234_Payouts"
         )
 
     # ── Mark as Done (admin in payout channel) ──
