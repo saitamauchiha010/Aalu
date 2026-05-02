@@ -328,7 +328,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await query.message.reply_text(
-            "✅ Payment request submitted!\n\nYour credits will be added after verification."
+            "✅ Payment request submitted!\n\nYour credits will be added after verification.\n\nCheck Payment Status @Siee123_Payouts"
         )
 
     # ── Mark as Done (admin in payout channel) ──
