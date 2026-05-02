@@ -250,13 +250,19 @@ async def process_number(update, context, number):
                 return
 
             if UNLIMITED_MODE:
-                credit_note = "♾️ Unlimited Mode ON — no credits deducted"
-            else:
-                new_balance = await update_credits(user_id, -1)
-                credit_note = f"💰 Credits remaining: {new_balance}"
+            credit_note = "♾️ Unlimited Mode ON — no credits deducted"
+        else:
+            new_balance = await update_credits(user_id, -1)
+            credit_note = f"💰 Credits remaining: {new_balance}"
 
-            if "Api_BY" in data:
-                data["Api_BY"] = CUSTOM_NAME
+        if not data.get("success", True) or "No Record" in str(data):
+            if not UNLIMITED_MODE:
+                await update_credits(user_id, 1)
+            await update.message.reply_text("❌ No result found for this number.\n💰 Credit refunded.")
+            return
+
+        if "Api_BY" in data:
+            data["Api_BY"] = CUSTOM_NAME
             pretty = json.dumps(data, indent=2, ensure_ascii=False)
             await update.message.reply_text(f"```\n{pretty}\n```\n\n{credit_note}", parse_mode="Markdown")
 
