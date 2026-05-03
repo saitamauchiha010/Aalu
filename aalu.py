@@ -51,21 +51,22 @@ orders   = db["orders"]
 async def get_user(user_id):
     return await users.find_one({"user_id": user_id})
 
-async def create_user(user_id, referred_by=None, username=None, name=None):
+async def create_user(user_id, referred_by=None, username=None, name=None, joined=False):
     ref_code = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
     user = {
         "user_id"    : user_id,
-        "credits"    : START_CREDITS,
+        "credits"    : START_CREDITS if joined else 0,
         "joined"     : datetime.now().strftime("%Y-%m-%d"),
         "ref_code"   : ref_code,
         "referred_by": referred_by,
         "referrals"  : 0,
         "username"   : username,
         "name"       : name,
-        "banned"     : False
+        "banned"     : False,
+        "force_joined": joined  # True = joined all channels, False = only started
     }
     await users.insert_one(user)
-    if referred_by:
+    if referred_by and joined:
         await users.update_one({"user_id": referred_by}, {"$inc": {"credits": REFER_CREDITS, "referrals": 1}})
     return user
 
@@ -140,6 +141,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if referrer and referrer["user_id"] != user_id:
             referred_by = referrer["user_id"]
 
+    # Save user even if not joined — force_joined=False
+    user = await get_user(user_id)
+    if user is None:
+        user = await create_user(user_id, referred_by, username, name, joined=False)
+    else:
+        await users.update_one({"user_id": user_id}, {"$set": {"username": username, "name": name}})
+
+    if user.get("banned"):
+        await update.message.reply_text("❌ You have been banned from using this bot.")
+        return
+
     joined = await force_join_check(bot, user_id)
     if not joined:
         keyboard = [
@@ -153,16 +165,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    user   = await get_user(user_id)
-    is_new = user is None
-    if is_new:
-        user = await create_user(user_id, referred_by, username, name)
+    # Mark as force_joined and give credits if first time joining
+    if not user.get("force_joined"):
+        await users.update_one(
+            {"user_id": user_id},
+            {"$set": {"force_joined": True}, "$inc": {"credits": START_CREDITS}}
+        )
+        # Give refer credits to referrer only now
+        if referred_by:
+            await users.update_one({"user_id": referred_by}, {"$inc": {"credits": REFER_CREDITS, "referrals": 1}})
+        is_new = True
+        user = await get_user(user_id)
     else:
-        await users.update_one({"user_id": user_id}, {"$set": {"username": username, "name": name}})
-
-    if user.get("banned"):
-        await update.message.reply_text("❌ You have been banned from using this bot.")
-        return
+        is_new = False
 
     inline_keyboard = [
         [InlineKeyboardButton("📢 Channel", url=FORCE_CHANNEL_LINK), InlineKeyboardButton("👥 Group 1", url=FORCE_GROUP1_LINK)],
@@ -234,7 +249,6 @@ async def process_number(update, context, number):
         response = requests.get(url, timeout=10)
         result   = response.text.strip()
 
-        # No result — no credit deducted
         if not result:
             await update.message.reply_text("❌ No result found for this number.")
             return
@@ -242,7 +256,7 @@ async def process_number(update, context, number):
         try:
             data = json.loads(result)
             if not data.get("success", True) or "No Record" in str(data):
-                await update.message.reply_text("❌ No result found for this number.\n💰 Credit refunded.")
+                await update.message.reply_text("❌ No result found for this number.")
                 return
 
             if UNLIMITED_MODE:
@@ -318,7 +332,7 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User not found.")
 
 # ============================================================
-#                     CHECK USER (ADMIN)
+#                     CHECK USER
 # ============================================================
 
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -337,6 +351,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uname    = f"@{user['username']}" if user.get("username") else "No username"
     name     = user.get("name") or "Unknown"
     banned   = "Yes 🚫" if user.get("banned") else "No ✅"
+    fj       = "Yes ✅" if user.get("force_joined") else "No ❌"
 
     referred_users = await users.find(
         {"referred_by": uid},
@@ -357,6 +372,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Credits: {user['credits']}\n"
         f"📅 Joined: {user['joined']}\n"
         f"👥 Referrals: {user['referrals']}\n"
+        f"✅ Force Joined: {fj}\n"
         f"🚫 Banned: {banned}\n"
         f"🔗 Refer Link: {ref_link}\n"
     )
@@ -368,7 +384,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ============================================================
-#                     MSG USER (ADMIN)
+#                     MSG USER
 # ============================================================
 
 async def msg_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -391,7 +407,7 @@ async def msg_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Failed: {str(e)}")
 
 # ============================================================
-#                     REFER LIST (ADMIN)
+#                     REFER LIST
 # ============================================================
 
 async def referlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,7 +430,7 @@ async def referlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ============================================================
-#                     REFER LEADERBOARD (PUBLIC)
+#                     REFER LEADERBOARD
 # ============================================================
 
 async def referstat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,7 +476,6 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bot     = context.bot
 
-    # Force join check before redeem
     joined = await force_join_check(bot, user_id)
     if not joined:
         keyboard = [
@@ -533,7 +548,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "buy_upi":
         context.user_data["upi_step"] = "enter_amount"
-        await query.message.reply_text(
+        await query.message.edit_text(
             "📱 UPI Payment\n\n💵 Rate: ₹1 = 1 Credit\n\nPlease enter the amount you want to pay (in ₹):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_payment")]])
         )
@@ -541,7 +556,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cancel_payment":
         context.user_data.pop("upi_step", None)
         context.user_data.pop("upi_amount", None)
-        await query.message.reply_text("❌ Payment cancelled.")
+        await query.message.edit_text("❌ Payment cancelled.")
 
     elif data.startswith("paid_"):
         order_id = data.split("_", 1)[1]
@@ -566,7 +581,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         status_keyboard = [[InlineKeyboardButton("✅ Mark as Done", callback_data=f"done_{order_id}_{user_id}_{amount}")]]
         await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, reply_markup=InlineKeyboardMarkup(status_keyboard))
-        await query.message.reply_text("✅ Payment request submitted!\n\nYour credits will be added after verification.\n\n Check Status @Siee1234_Payouts")
+        await query.message.edit_text("✅ Payment request submitted!\n\nYour credits will be added after verification.")
 
     elif data.startswith("done_"):
         parts    = data.split("_")
@@ -727,14 +742,18 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID:
             await update.message.reply_text("❌ Access Denied.")
             return
-        total_users    = await users.count_documents({})
-        total_credits  = sum([u["credits"] async for u in users.find({}, {"credits": 1})])
+        total_users   = await users.count_documents({})
+        joined_users  = await users.count_documents({"force_joined": True})
+        only_start    = total_users - joined_users
+        total_credits = sum([u["credits"] async for u in users.find({}, {"credits": 1})])
         total_vouchers = await vouchers.count_documents({})
         await update.message.reply_text(
             "⚙️ Admin Panel\n━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🔧 Mode: {MODE}\n"
             f"♾️ Unlimited: {'ON' if UNLIMITED_MODE else 'OFF'}\n"
             f"👤 Total Users: {total_users}\n"
+            f"✅ Joined Users: {joined_users}\n"
+            f"⏳ Only Started: {only_start}\n"
             f"💰 Total Credits: {total_credits}\n"
             f"🎁 Start Credits: {START_CREDITS}\n"
             f"🔗 Refer Credits: {REFER_CREDITS}\n"
@@ -786,13 +805,13 @@ async def unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    # Get exact message as typed — no format change
     full_text = update.message.text
     if len(full_text.split(" ", 1)) < 2:
         await update.message.reply_text("📌 Usage: /broadcast <message>")
         return
     message = full_text.split(" ", 1)[1]
     success = failed = 0
+    # Broadcast to ALL users including only-started ones
     async for u in users.find({}, {"user_id": 1}):
         try:
             await context.bot.send_message(chat_id=u["user_id"], text=message)
@@ -806,11 +825,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     total_users    = await users.count_documents({})
+    joined_users   = await users.count_documents({"force_joined": True})
+    only_start     = total_users - joined_users
     total_credits  = sum([u["credits"] async for u in users.find({}, {"credits": 1})])
     total_vouchers = await vouchers.count_documents({})
     await update.message.reply_text(
         f"📊 Bot Statistics\n━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 Total Users: {total_users}\n"
+        f"✅ Joined Users: {joined_users}\n"
+        f"⏳ Only Started: {only_start}\n"
         f"💰 Total Credits: {total_credits}\n"
         f"🔧 Mode: {MODE}\n"
         f"♾️ Unlimited: {'ON' if UNLIMITED_MODE else 'OFF'}\n"
