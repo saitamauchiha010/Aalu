@@ -14,8 +14,8 @@ from telegram.error import BadRequest
 # ══════════════════════════════════════════════
 
 API_URL        = "num.zvx.workers.dev/?key=DxD&mobile={}"
-BOT_TOKEN      = "8693982920:AAH_fwloRRWwRCgNyYyVNeZlY1PoVcyPcG0"
-BOT_USERNAME   = "Gamcchhaa_Bot"
+BOT_TOKEN      = "8745436475:AAGnp-zEuPsGC2QAqJcKLkL3eL2DBXJpmDc"
+BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
 ADMIN_ID       = 6131370190
 MONGO_URI      = "mongodb+srv://saitamauchiha01025_db_user:yMvHQKjjRpFsgDxz@cluster0.fomymln.mongodb.net/?appName=Cluster0"
@@ -642,7 +642,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_caption(
                 "✅ *Payment Request Submitted!*\n\n"
                 "Your credits will be added after verification.\n"
-                "_Usually within a few minutes._",
+                "_Usually within a few minutes._\n"
+                "_Check Payment Status @Siee1234_Payouts",
                 parse_mode="Markdown",
                 reply_markup=None
             )
