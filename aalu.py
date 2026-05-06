@@ -643,7 +643,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "✅ *Payment Request Submitted!*\n\n"
                 "Your credits will be added after verification.\n"
                 "_Usually within a few minutes._\n"
-                "_Check Payment Status @Siee1234_Payouts",
+                "*Check Payment Status @Siee1234_Payouts*",
                 parse_mode="Markdown",
                 reply_markup=None
             )
