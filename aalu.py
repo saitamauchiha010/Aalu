@@ -97,7 +97,7 @@ def get_main_keyboard(user_id):
         ]
     else:
         keyboard = [
-            [KeyboardButton("🔍 Search Number"),   KeyboardButton("🔎 Search TG  Number")],
+            [KeyboardButton("🔍 Search Number"),   KeyboardButton("🔎 Search TG Number")],
             [KeyboardButton("👤 My Account"),       KeyboardButton("💰 Credits")],
             [KeyboardButton("🔗 Refer"),            KeyboardButton("💳 Buy Credits")],
             [KeyboardButton("❓ Help")],
@@ -818,7 +818,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Search TG Number (TG API) ──
-    if text == "🔎 Search TG  Number":
+    if text == "🔎 Search TG Number":
         joined = await force_join_check(bot, user_id)
         if not joined:
             await update.message.reply_text("⚠️ Please join all required channels/groups first.", reply_markup=join_keyboard())
@@ -826,9 +826,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_number"] = 2
         await update.message.reply_text(
             "🔎 *Search TG Number*\n\n"
-            "Please enter the number to search:\n\n"
-            "⚠️ *Without +91* — digits only\n"
-            "_Example: `6116093010 [Telegram User ID]`_",
+            "Please enter the User ID Or Target Username to search:\n\n"
+            "⚠️ *Without space* — User ID or Username\n"
+            "_Example: `6116093010 [Telegram User ID]`_\n"
+            "_Example: `@username`_",
             parse_mode="Markdown"
         )
         return
