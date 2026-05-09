@@ -811,8 +811,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_number"] = 2
         await update.message.reply_text(
             "🔎 *Search TG Number*\n\n"
-            "Please enter the number to search:\n\n"
-            "⚠️ *Without +91* — digits only\n"
+            "Please enter the userid to search:\n\n"
+            "⚠️ *Without space* — digits only\n"
             "_Example: `6116093010 [Telegram User ID]`_",
             parse_mode="Markdown"
         )
