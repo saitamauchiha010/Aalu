@@ -15,6 +15,7 @@ from telegram.error import BadRequest
 
 API_URL        = "num.zvx.workers.dev/?key=DxD&mobile={}"
 API_URL2       = "https://tg-ap.vercel.app/api/tg?key=mynkx&term={}"
+VEHICLE_API    = "https://vehicleee.onrender.com/lookup?rc={}"
 BOT_TOKEN      = "8745436475:AAGnp-zEuPsGC2QAqJcKLkL3eL2DBXJpmDc"
 BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
@@ -24,10 +25,11 @@ UPI_ID         = "DarkGalaxxyy@naviaxis"
 UPI_QR_LINK    = "https://t.me/jaiwkwkwkkwkwkjwkq/2"
 PAYOUT_CHANNEL = -1003579822719
 
-START_CREDITS  = 2
-REFER_CREDITS  = 5
-MODE           = "dual"
-UNLIMITED_MODE = False
+START_CREDITS      = 2
+REFER_CREDITS      = 5
+DEDUCTION_CREDITS  = 1
+MODE               = "dual"
+UNLIMITED_MODE     = False
 
 FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
@@ -110,16 +112,17 @@ def get_main_keyboard(user_id, is_admin_user=False):
     if is_admin_user:
         keyboard = [
             [KeyboardButton("🔍 Search Number"),   KeyboardButton("🔎 Search TG Number")],
-            [KeyboardButton("👤 My Account"),       KeyboardButton("💰 Credits")],
-            [KeyboardButton("🔗 Refer"),            KeyboardButton("💳 Buy Credits")],
-            [KeyboardButton("❓ Help"),             KeyboardButton("⚙️ Admin Panel")],
+            [KeyboardButton("🚗 Vehicle Search"),   KeyboardButton("👤 My Account")],
+            [KeyboardButton("💰 Credits"),          KeyboardButton("🔗 Refer")],
+            [KeyboardButton("💳 Buy Credits"),      KeyboardButton("❓ Help")],
+            [KeyboardButton("⚙️ Admin Panel")],
         ]
     else:
         keyboard = [
             [KeyboardButton("🔍 Search Number"),   KeyboardButton("🔎 Search TG Number")],
-            [KeyboardButton("👤 My Account"),       KeyboardButton("💰 Credits")],
-            [KeyboardButton("🔗 Refer"),            KeyboardButton("💳 Buy Credits")],
-            [KeyboardButton("❓ Help")],
+            [KeyboardButton("🚗 Vehicle Search"),   KeyboardButton("👤 My Account")],
+            [KeyboardButton("💰 Credits"),          KeyboardButton("🔗 Refer")],
+            [KeyboardButton("💳 Buy Credits"),      KeyboardButton("❓ Help")],
         ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -329,7 +332,7 @@ async def process_number(update, context, number, api_num=1):
             if UNLIMITED_MODE:
                 credit_note = "♾️ _Unlimited Mode — no credits deducted_"
             else:
-                new_balance = await update_credits(user_id, -1)
+                new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
                 credit_note = f"💰 _Credits remaining: {new_balance}_"
 
             if "Api_BY" in data:
@@ -339,7 +342,7 @@ async def process_number(update, context, number, api_num=1):
 
         except json.JSONDecodeError:
             if not UNLIMITED_MODE:
-                new_balance = await update_credits(user_id, -1)
+                new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
                 credit_note = f"💰 _Credits remaining: {new_balance}_"
             else:
                 credit_note = "♾️ _Unlimited Mode ON_"
@@ -365,6 +368,104 @@ async def tgnum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📌 *Usage:* `/tgnum <number>`\n\n*Example:* `/tgnum 6116352810 [Telegram User ID]`", parse_mode="Markdown")
         return
     await process_number(update, context, context.args[0], api_num=2)
+
+# ══════════════════════════════════════════════
+#               VEHICLE SEARCH
+# ══════════════════════════════════════════════
+
+async def process_vehicle(update, context, rc_number):
+    user_id   = update.effective_user.id
+    chat_type = update.effective_chat.type
+    bot       = context.bot
+
+    if MODE == "maintenance":
+        await update.message.reply_text("🔧 *Maintenance Mode*\n\nBot is under maintenance. Please try again later.", parse_mode="Markdown")
+        return
+    if MODE == "group" and chat_type == "private":
+        await update.message.reply_text("⚠️ This bot only works in groups.")
+        return
+    if MODE == "private" and chat_type in ["group", "supergroup"]:
+        await update.message.reply_text("⚠️ This bot only works in private chat.")
+        return
+
+    joined = await force_join_check(bot, user_id)
+    if not joined:
+        await update.message.reply_text("⚠️ *Access Restricted*\n\nJoin all required channels first.", parse_mode="Markdown", reply_markup=join_keyboard())
+        return
+
+    user = await get_user(user_id)
+    if user is None:
+        user = await create_user(user_id)
+
+    if user.get("banned"):
+        await update.message.reply_text("🚫 You have been banned from using this bot.")
+        return
+
+    if not UNLIMITED_MODE and user["credits"] <= 0:
+        available_voucher = await vouchers.find_one({
+            "$expr": {"$lt": ["$uses", "$max_uses"]},
+            "used_by": {"$nin": [user_id]}
+        })
+        zero_msg = (
+            "❌ *Insufficient Credits*\n\n"
+            "You have *0 credits* remaining.\n\n"
+            "💡 *Ways to earn credits:*\n"
+            "• Refer friends → 🔗 Refer button\n"
+            "• Redeem a voucher → /redeem\n"
+            "• Purchase credits → 💳 Buy Credits"
+        )
+        if available_voucher:
+            zero_msg += (
+                f"\n\n🎟️ *Active Voucher Available!*\n"
+                f"Use code: `{available_voucher['code']}`\n"
+                f"Gives: *{available_voucher['credits']} credits*\n"
+                f"Type: `/redeem {available_voucher['code']}`"
+            )
+        await update.message.reply_text(zero_msg, parse_mode="Markdown")
+        return
+
+    try:
+        url      = VEHICLE_API.format(rc_number.upper())
+        response = requests.get(url, timeout=15)
+        data     = response.json()
+
+        # Check if result is empty / no result
+        values = [v for k, v in data.items() if k != "copyright"]
+        non_null = [v for v in values if v not in (None, "NA", "")]
+
+        if not non_null:
+            await update.message.reply_text(
+                "❌ *No Result Found*\n\nNo data available for this vehicle number.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Deduct credits only when result found
+        if UNLIMITED_MODE:
+            credit_note = "♾️ _Unlimited Mode — no credits deducted_"
+        else:
+            new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
+            credit_note = f"💰 _Credits remaining: {new_balance}_"
+
+        pretty = json.dumps(data, indent=2, ensure_ascii=False)
+        await update.message.reply_text(f"```\n{pretty}\n```\n\n{credit_note}", parse_mode="Markdown")
+
+    except requests.exceptions.Timeout:
+        await update.message.reply_text("⏱ *Request Timed Out*\n\nPlease try again.", parse_mode="Markdown")
+    except requests.exceptions.ConnectionError:
+        await update.message.reply_text("📡 *Connection Error*\n\nUnable to connect to the API.", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+
+async def vehicle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "📌 *Usage:*\n`/vehicle <vehicle number>`\n\n*Example:*\n`/vehicle UP78AB1234`",
+            parse_mode="Markdown"
+        )
+        return
+    await process_vehicle(update, context, context.args[0])
 
 # ══════════════════════════════════════════════
 #               BAN / UNBAN
@@ -647,6 +748,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Cancel Search ──
     elif data == "cancel_search":
         context.user_data.pop("waiting_for_number", None)
+        context.user_data.pop("waiting_for_vehicle", None)
         try:
             await query.message.edit_text("❌ *Search cancelled.*", parse_mode="Markdown", reply_markup=None)
         except Exception:
@@ -885,6 +987,32 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ── Vehicle Search ──
+    if text == "🚗 Vehicle Search":
+        joined = await force_join_check(bot, user_id)
+        if not joined:
+            await update.message.reply_text("⚠️ Please join all required channels/groups first.", reply_markup=join_keyboard())
+            return
+        context.user_data["waiting_for_vehicle"] = True
+        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")]])
+        await update.message.reply_text(
+            "🚗 *Vehicle Search*\n\n"
+            "Please enter the Vehicle Registration Number:\n\n"
+            "_Example: `UP78AB1234`_",
+            parse_mode="Markdown",
+            reply_markup=cancel_kb
+        )
+        return
+
+    if context.user_data.get("waiting_for_vehicle"):
+        context.user_data.pop("waiting_for_vehicle")
+        rc = text.strip().upper()
+        if rc:
+            await process_vehicle(update, context, rc)
+        else:
+            await update.message.reply_text("❌ Invalid input. Enter a valid vehicle number.")
+        return
+
     if context.user_data.get("waiting_for_number"):
         api_num = context.user_data.pop("waiting_for_number")
         clean = text.strip().lstrip("@")
@@ -922,7 +1050,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "💰 *Credits*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Each search costs *1 credit*.{unlimited_note}\n\n"
+            f"Each search costs *{DEDUCTION_CREDITS} credit(s)*.{unlimited_note}\n\n"
             "📌 *How to earn credits:*\n\n"
             f"🎁 New users → *{START_CREDITS}* free credits\n"
             f"🔗 Refer a friend → *{REFER_CREDITS}* credits\n"
@@ -1016,6 +1144,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Total Credits: *{total_credits}*\n"
             f"🎁 Start Credits: *{START_CREDITS}*\n"
             f"🔗 Refer Credits: *{REFER_CREDITS}*\n"
+            f"💸 Search Cost: *{DEDUCTION_CREDITS}* credit(s)\n"
             f"🎟️ Vouchers: *{total_vouchers}*\n"
             f"🛡️ Admins: *{total_admins}*\n\n"
             "📌 *All Commands:*\n\n"
@@ -1028,6 +1157,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/unlimited` `on|off`\n"
             "`/setstartcredits` `<amount>`\n"
             "`/setrefercredits` `<amount>`\n"
+            "`/setdeductioncredits` `<amount>`\n"
             "`/createvoucher` `<code> <credits> <uses>`\n"
             "`/deletevoucher` `<code>`\n"
             "`/listvouchers`\n"
@@ -1218,6 +1348,21 @@ async def setrefercredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     REFER_CREDITS = int(context.args[0])
     await update.message.reply_text(f"✅ Refer credits set to: *{REFER_CREDITS}*", parse_mode="Markdown")
 
+
+async def setdeductioncredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global DEDUCTION_CREDITS
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Owner only command.")
+        return
+    if not context.args or not context.args[0].isdigit() or int(context.args[0]) < 1:
+        await update.message.reply_text("📌 Usage: /setdeductioncredits <amount>\n_Example: /setdeductioncredits 2_", parse_mode="Markdown")
+        return
+    DEDUCTION_CREDITS = int(context.args[0])
+    await update.message.reply_text(
+        f"✅ *Search cost updated!*\n\nEach search now costs *{DEDUCTION_CREDITS} credit(s)*.",
+        parse_mode="Markdown"
+    )
+
 # ══════════════════════════════════════════════
 #               OWNER ADMIN MANAGEMENT
 # ══════════════════════════════════════════════
@@ -1313,33 +1458,35 @@ async def checkadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start",           start))
-    app.add_handler(CommandHandler("num",             num))
-    app.add_handler(CommandHandler("tgnum",           tgnum))
-    app.add_handler(CommandHandler("referstat",       referstat))
-    app.add_handler(CommandHandler("referlist",       referlist))
-    app.add_handler(CommandHandler("redeem",          redeem))
-    app.add_handler(CommandHandler("createvoucher",   createvoucher))
-    app.add_handler(CommandHandler("deletevoucher",   deletevoucher))
-    app.add_handler(CommandHandler("listvouchers",    listvouchers))
-    app.add_handler(CommandHandler("unlimited",       unlimited))
-    app.add_handler(CommandHandler("setmode",         setmode))
-    app.add_handler(CommandHandler("broadcast",       broadcast))
-    app.add_handler(CommandHandler("stats",           stats))
-    app.add_handler(CommandHandler("addcredits",      addcredits))
-    app.add_handler(CommandHandler("removecredits",   removecredits))
-    app.add_handler(CommandHandler("setcredits",      setcredits))
-    app.add_handler(CommandHandler("checkbalance",    checkbalance))
-    app.add_handler(CommandHandler("setstartcredits", setstartcredits))
-    app.add_handler(CommandHandler("setrefercredits", setrefercredits))
-    app.add_handler(CommandHandler("ban",             ban))
-    app.add_handler(CommandHandler("unban",           unban))
-    app.add_handler(CommandHandler("check",           check))
-    app.add_handler(CommandHandler("msg",             msg_user))
-    app.add_handler(CommandHandler("addadmin",        addadmin))
-    app.add_handler(CommandHandler("removeadmin",     removeadmin))
-    app.add_handler(CommandHandler("adminlist",       adminlist))
-    app.add_handler(CommandHandler("checkadmin",      checkadmin))
+    app.add_handler(CommandHandler("start",                start))
+    app.add_handler(CommandHandler("num",                  num))
+    app.add_handler(CommandHandler("tgnum",                tgnum))
+    app.add_handler(CommandHandler("vehicle",              vehicle))
+    app.add_handler(CommandHandler("referstat",            referstat))
+    app.add_handler(CommandHandler("referlist",            referlist))
+    app.add_handler(CommandHandler("redeem",               redeem))
+    app.add_handler(CommandHandler("createvoucher",        createvoucher))
+    app.add_handler(CommandHandler("deletevoucher",        deletevoucher))
+    app.add_handler(CommandHandler("listvouchers",         listvouchers))
+    app.add_handler(CommandHandler("unlimited",            unlimited))
+    app.add_handler(CommandHandler("setmode",              setmode))
+    app.add_handler(CommandHandler("broadcast",            broadcast))
+    app.add_handler(CommandHandler("stats",                stats))
+    app.add_handler(CommandHandler("addcredits",           addcredits))
+    app.add_handler(CommandHandler("removecredits",        removecredits))
+    app.add_handler(CommandHandler("setcredits",           setcredits))
+    app.add_handler(CommandHandler("checkbalance",         checkbalance))
+    app.add_handler(CommandHandler("setstartcredits",      setstartcredits))
+    app.add_handler(CommandHandler("setrefercredits",      setrefercredits))
+    app.add_handler(CommandHandler("setdeductioncredits",  setdeductioncredits))
+    app.add_handler(CommandHandler("ban",                  ban))
+    app.add_handler(CommandHandler("unban",                unban))
+    app.add_handler(CommandHandler("check",                check))
+    app.add_handler(CommandHandler("msg",                  msg_user))
+    app.add_handler(CommandHandler("addadmin",             addadmin))
+    app.add_handler(CommandHandler("removeadmin",          removeadmin))
+    app.add_handler(CommandHandler("adminlist",            adminlist))
+    app.add_handler(CommandHandler("checkadmin",           checkadmin))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     print("Bot is running...")
