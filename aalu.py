@@ -15,7 +15,7 @@ from telegram.error import BadRequest
 
 API_URL        = "num.zvx.workers.dev/?key=DxD&mobile={}"
 API_URL2       = "https://tg-ap.vercel.app/api/tg?key=mynkx&term={}"
-VEHICLE_API    = "https://vehicleee.onrender.com/lookup?rc={}"
+VEHICLE_API    = "https://vehicleoooo.onrender.com/lookup?rc={}"
 BOT_TOKEN      = "8745436475:AAGnp-zEuPsGC2QAqJcKLkL3eL2DBXJpmDc"
 BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
@@ -26,7 +26,7 @@ UPI_QR_LINK    = "https://t.me/jaiwkwkwkkwkwkjwkq/2"
 PAYOUT_CHANNEL = -1003579822719
 
 START_CREDITS      = 2
-REFER_CREDITS      = 5
+REFER_CREDITS      = 3
 DEDUCTION_CREDITS  = 1
 MODE               = "dual"
 UNLIMITED_MODE     = False
