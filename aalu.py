@@ -3,7 +3,7 @@ import json
 import random
 import string
 import certifi
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -45,6 +45,9 @@ PRESET_PAYMENTS = {
 }
 MIN_CUSTOM_AMOUNT = 5
 
+# Indian timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
 # ══════════════════════════════════════════════
 #               MONGODB
 # ══════════════════════════════════════════════
@@ -69,7 +72,7 @@ async def create_user(user_id, referred_by=None, username=None, name=None, force
     user = {
         "user_id"     : user_id,
         "credits"     : START_CREDITS if force_joined else 0,
-        "joined"      : datetime.now().strftime("%Y-%m-%d"),
+        "joined"      : datetime.now(IST).strftime("%Y-%m-%d"),
         "ref_code"    : ref_code,
         "referred_by" : referred_by,
         "referrals"   : 0,
@@ -111,7 +114,7 @@ async def log_admin_action(admin_id, action, target=None, details=None):
         "action"   : action,
         "target"   : target,
         "details"  : details,
-        "time"     : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "time"     : datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
     })
 
 # ══════════════════════════════════════════════
@@ -243,9 +246,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔍 *DeepTrace* — Fetch detailed info\n"
         "about any mobile number instantly.\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "📌 *Commands*\n\n"
-        "`/num <number>` — Search Mobile Number Information\n"
-        "`/tgnum <number>` — Search Mobile Number by Telegram UID\n"
+        "📌 *Available APIs & Commands*\n\n"
+        "`/num <number>` — Mobile Number Info (API 1)\n"
+        "`/tgnum <number>` — Telegram UID Lookup (API 2)\n"
+        "`/vehicle <reg_no>` — Vehicle Registration Info 🚗\n"
         "`/referstat` — Refer leaderboard\n"
         "`/redeem <code>` — Redeem voucher\n\n"
         "💡 Use the buttons below to navigate."
@@ -286,7 +290,6 @@ async def process_number(update, context, number, api_num=1):
         await update.message.reply_text("🚫 You have been banned from using this bot.")
         return
 
-    # Check credits only if not unlimited mode
     if not UNLIMITED_MODE and user["credits"] <= 0:
         available_voucher = await vouchers.find_one({
             "$expr": {"$lt": ["$uses", "$max_uses"]},
@@ -325,11 +328,9 @@ async def process_number(update, context, number, api_num=1):
             await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
             return
 
-        # Special check for TG API error that should not deduct credits
         deduct_credits = True
         try:
             data = json.loads(result)
-            # API 2 error handling
             if api_num == 2:
                 if data.get("success") == False and data.get("error") == "Upstream error":
                     await update.message.reply_text("❌ *API Error*\n\nUpstream error from TG API. No credits deducted.\nPlease try again later.", parse_mode="Markdown")
@@ -339,7 +340,6 @@ async def process_number(update, context, number, api_num=1):
                 if not r.get("success", True) or "not found" in str(r.get("msg", "")).lower():
                     await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number/username.", parse_mode="Markdown")
                     return
-            # API 1 no result check
             if api_num == 1 and (not data.get("success", True) or "No Record" in str(data)):
                 await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
                 return
@@ -355,7 +355,6 @@ async def process_number(update, context, number, api_num=1):
                     data["Api_BY"] = CUSTOM_NAME
                 pretty = json.dumps(data, indent=2, ensure_ascii=False)
                 await update.message.reply_text(f"```\n{pretty}\n```\n\n{credit_note}", parse_mode="Markdown")
-            # else already replied
         except json.JSONDecodeError:
             if deduct_credits:
                 if not UNLIMITED_MODE:
@@ -448,7 +447,6 @@ async def process_vehicle(update, context, rc_number):
         response = requests.get(url, timeout=15)
         data     = response.json()
 
-        # Check if result is empty / no result
         values = [v for k, v in data.items() if k != "copyright"]
         non_null = [v for v in values if v not in (None, "NA", "")]
 
@@ -459,7 +457,6 @@ async def process_vehicle(update, context, rc_number):
             )
             return
 
-        # Deduct credits only when result found
         if UNLIMITED_MODE:
             credit_note = "♾️ _Unlimited Mode — no credits deducted_"
         else:
@@ -487,6 +484,31 @@ async def vehicle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_vehicle(update, context, context.args[0])
 
 # ══════════════════════════════════════════════
+#               /id COMMAND (ADMIN ONLY)
+# ══════════════════════════════════════════════
+
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not await is_admin(user_id):
+        await update.message.reply_text("❌ Admin only command.")
+        return
+    if not context.args:
+        await update.message.reply_text("📌 Usage: /id @username")
+        return
+    username = context.args[0].lstrip('@')
+    try:
+        chat = await context.bot.get_chat(f"@{username}")
+        await update.message.reply_text(
+            f"🆔 *User ID for @{username}:* `{chat.id}`\n"
+            f"👤 Name: {chat.full_name or 'N/A'}",
+            parse_mode="Markdown"
+        )
+    except BadRequest as e:
+        await update.message.reply_text(f"❌ Error: {e.message}", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to get ID: {str(e)}")
+
+# ══════════════════════════════════════════════
 #               BAN / UNBAN / BANLIST
 # ══════════════════════════════════════════════
 
@@ -497,7 +519,7 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📌 Usage: /ban <user_id>")
         return
     uid    = int(context.args[0])
-    result = await users.update_one({"user_id": uid}, {"$set": {"banned": True, "banned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}})
+    result = await users.update_one({"user_id": uid}, {"$set": {"banned": True, "banned_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")}})
     if result.modified_count:
         await log_admin_action(update.effective_user.id, "ban", uid, f"Banned user {uid}")
         await update.message.reply_text(f"🚫 User `{uid}` has been banned.", parse_mode="Markdown")
@@ -538,7 +560,7 @@ async def banusers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u in banned_users:
         name = u.get("name") or f"User {u['user_id']}"
         ban_date = u.get("banned_at") or "Unknown"
-        msg += f"🆔 `{u['user_id']}` — {name}\n📅 Banned: {ban_date}\n\n"
+        msg += f"🆔 [{name}](tg://user?id={u['user_id']})\n📅 Banned: {ban_date}\n\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ══════════════════════════════════════════════
@@ -569,13 +591,13 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     refer_list = ""
     for r in referred_users:
-        rname = f"@{r['username']}" if r.get("username") else r.get("name") or f"User {r['user_id']}"
+        rname = r.get("name") or f"User {r['user_id']}"
         refer_list += f"  • [{rname}](tg://user?id={r['user_id']})\n"
 
     msg = (
         "👤 *User Details*\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📛 Name: {name}\n"
+        f"📛 Name: [{name}](tg://user?id={uid})\n"
         f"🔖 Username: {uname}\n"
         f"🆔 User ID: `{uid}`\n"
         f"💰 Credits: {user['credits']}\n"
@@ -633,7 +655,7 @@ async def referlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = "📋 *Full Refer List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(all_users, 1):
-        name = f"@{u['username']}" if u.get("username") else u.get("name") or f"User {u['user_id']}"
+        name = u.get("name") or f"User {u['user_id']}"
         msg += f"{i}. [{name}](tg://user?id={u['user_id']}) — {u['referrals']} refers\n"
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -656,7 +678,7 @@ async def referstat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🏆 *Refer Leaderboard*\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(top_users):
         medal = medals[i] if i < 3 else f"{i+1}."
-        name  = f"@{u['username']}" if u.get("username") else u.get("name") or f"User {u['user_id']}"
+        name  = u.get("name") or f"User {u['user_id']}"
         msg  += f"{medal} [{name}](tg://user?id={u['user_id']}) — *{u['referrals']}* refers\n"
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -774,11 +796,12 @@ async def process_payment(update, query, amount, credits):
         "amount"  : amount,
         "credits" : credits,
         "status"  : "pending",
-        "created" : datetime.now().strftime("%Y-%m-%d %H:%M")
+        "created" : datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     })
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ I've Paid", callback_data=f"paid_{order_id}")],
-        [InlineKeyboardButton("❌ Cancel",    callback_data="cancel_payment")]
+        [InlineKeyboardButton("❌ Cancel",    callback_data="cancel_payment")],
+        [InlineKeyboardButton("🔙 Back",      callback_data="buy_menu_back")]
     ])
     await query.message.delete()
     await query.message.reply_photo(
@@ -829,6 +852,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_payment")]])
         )
+        return
+
+    # ── Credits menu inline buttons ──
+    elif data == "credits_refer":
+        user = await get_user(user_id) or await create_user(user_id)
+        ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
+        await query.message.reply_text(
+            "🔗 *Refer & Earn*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Share your link and earn credits\n"
+            "for every friend who joins!\n\n"
+            f"🔗 Your Link:\n`{ref_link}`\n\n"
+            f"💰 Reward: *{REFER_CREDITS} credits* per refer\n"
+            f"👥 Total Referrals: *{user['referrals']}*\n"
+            "━━━━━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown"
+        )
+        await query.answer()
+        return
+
+    elif data == "credits_buy":
+        # send buy menu in same chat
+        await buy_credits_menu(query, context)
+        await query.answer()
+        return
+
+    # ── Back to buy menu from payment screen ──
+    elif data == "buy_menu_back":
+        await query.message.delete()
+        await buy_credits_menu(query, context)
         return
 
     # ── Cancel Search ──
@@ -979,7 +1032,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎁 Start Credits: *{START_CREDITS}*\n"
             f"🔗 Refer Credits: *{REFER_CREDITS}*\n"
             f"🎟️ Vouchers: *{total_vouchers}*\n\n"
-            f"_Last refreshed: {datetime.now().strftime('%H:%M:%S')}_"
+            f"_Last refreshed: {datetime.now(IST).strftime('%H:%M:%S')}_"
         )
         refresh_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]])
         try:
@@ -1000,7 +1053,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("upi_custom"):
         if text.isdigit() and int(text) >= MIN_CUSTOM_AMOUNT:
             amount = int(text)
-            credits = amount  # 1 credit per rupee
+            credits = amount
             order_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
             context.user_data.pop("upi_custom")
             await orders.insert_one({
@@ -1009,11 +1062,12 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "amount"  : amount,
                 "credits" : credits,
                 "status"  : "pending",
-                "created" : datetime.now().strftime("%Y-%m-%d %H:%M")
+                "created" : datetime.now(IST).strftime("%Y-%m-%d %H:%M")
             })
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ I've Paid", callback_data=f"paid_{order_id}")],
-                [InlineKeyboardButton("❌ Cancel",    callback_data="cancel_payment")]
+                [InlineKeyboardButton("❌ Cancel",    callback_data="cancel_payment")],
+                [InlineKeyboardButton("🔙 Back",      callback_data="buy_menu_back")]
             ])
             await update.message.reply_photo(
                 photo=UPI_QR_LINK,
@@ -1138,11 +1192,11 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Credits ──
+    # ── Credits with inline buttons ──
     if text == "💰 Credits":
         user = await get_user(user_id) or await create_user(user_id)
         unlimited_note = "\n\n♾️ *Unlimited Mode is ON* — searches are FREE!" if UNLIMITED_MODE else ""
-        await update.message.reply_text(
+        credits_msg = (
             "💰 *Credits*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💳 *Your Balance:* `{user['credits']}` credits{unlimited_note}\n\n"
@@ -1151,10 +1205,15 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎁 New users → *{START_CREDITS}* free credits\n"
             f"🔗 Refer a friend → *{REFER_CREDITS}* credits\n"
             "🎟️ Redeem voucher → `/redeem <code>`\n"
+            "_(Vouchers are dropped in official channel @siee1234)_\n"
             "💳 Purchase → ₹1 = 1 credit\n"
-            "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown"
+            "━━━━━━━━━━━━━━━━━━━━"
         )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Refer", callback_data="credits_refer"),
+             InlineKeyboardButton("💳 Buy Credits", callback_data="credits_buy")]
+        ])
+        await update.message.reply_text(credits_msg, parse_mode="Markdown", reply_markup=kb)
         return
 
     # ── Refer ──
@@ -1203,7 +1262,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         only_start     = total_users - joined_users
         refresh_kb     = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh Stats", callback_data="refresh_stats")]])
 
-        # Sub-admin panel (limited)
         if user_id != ADMIN_ID:
             await update.message.reply_text(
                 "🛡️ *Admin Panel*\n"
@@ -1226,7 +1284,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Owner panel (full)
         total_credits  = sum([u["credits"] async for u in users.find({}, {"credits": 1})])
         total_vouchers = await vouchers.count_documents({})
         total_admins   = await admins.count_documents({})
@@ -1261,7 +1318,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/check` `<uid>`\n"
             "`/msg` `<uid> <message>`\n"
             "`/referlist`\n"
-            "`/stats`\n\n"
+            "`/stats`\n"
+            "`/id` `<@username>`\n\n"
             "🛡️ *Admin & Owner:*\n"
             "`/addcredits` `<uid> <amount>`\n"
             "`/removecredits` `<uid> <amount>`\n"
@@ -1496,7 +1554,12 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ User `{uid}` is already an admin.", parse_mode="Markdown")
         return
     uname = f"@{user['username']}" if user.get("username") else user.get("name") or str(uid)
-    await admins.insert_one({"user_id": uid, "username": user.get("username"), "name": user.get("name"), "added": datetime.now().strftime("%Y-%m-%d %H:%M")})
+    await admins.insert_one({
+        "user_id": uid,
+        "username": user.get("username"),
+        "name": user.get("name"),
+        "added": datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+    })
     await log_admin_action(ADMIN_ID, "addadmin", uid, f"Added admin {uid}")
     await update.message.reply_text(f"✅ *{uname}* (`{uid}`) has been added as admin.", parse_mode="Markdown")
     try:
@@ -1536,7 +1599,7 @@ async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += "_No additional admins._"
     else:
         for i, a in enumerate(all_admins, 1):
-            aname = f"@{a['username']}" if a.get("username") else a.get("name") or f"User {a['user_id']}"
+            aname = a.get("name") or f"User {a['user_id']}"
             msg += f"{i}. [{aname}](tg://user?id={a['user_id']}) — Added: {a.get('added', 'N/A')}\n"
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -1575,6 +1638,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("num",                  num))
     app.add_handler(CommandHandler("tgnum",                tgnum))
     app.add_handler(CommandHandler("vehicle",              vehicle))
+    app.add_handler(CommandHandler("id",                   get_id))
     app.add_handler(CommandHandler("referstat",            referstat))
     app.add_handler(CommandHandler("referlist",            referlist))
     app.add_handler(CommandHandler("redeem",               redeem))
