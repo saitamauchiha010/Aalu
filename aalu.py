@@ -337,20 +337,17 @@ async def process_number(update, context, number, api_num=1):
         try:
             data = json.loads(result)
             if api_num == 2:
-                # Handle TG API specific errors that should not cost credits
+                # Handle TG API errors that should NOT cost credits
                 r = data.get("result", {})
                 if r.get("status") == False:
                     error_msg = r.get("error", "") or r.get("msg", "")
                     if "not found" in error_msg.lower() or "wait" in error_msg.lower():
-                        # Show the error but do not deduct credits
                         await update.message.reply_text(
                             f"❌ *TG Lookup Failed*\n\n`{error_msg}`\n\n_No credits deducted._",
                             parse_mode="Markdown"
                         )
                         return
-                # Continue normal flow; will deduct credits if no early return
                 if not r.get("status", True) and not ("not found" in str(r.get("msg", "")).lower() or "wait" in str(r.get("error", "")).lower()):
-                    # If status false but not the known non-deduct cases, still deduct maybe
                     pass
             if api_num == 1 and (not data.get("success", True) or "No Record" in str(data)):
                 await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
@@ -923,11 +920,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "cancel_withdraw":
-        context.user_data.pop("withdraw_step", None)
-        context.user_data.pop("withdraw_amount", None)
-        context.user_data.pop("withdraw_bank_name", None)
-        context.user_data.pop("withdraw_account_name", None)
-        context.user_data.pop("withdraw_upi", None)
+        for k in ("withdraw_step", "withdraw_amount", "withdraw_bank_name", "withdraw_account_name", "withdraw_upi"):
+            context.user_data.pop(k, None)
         try:
             await query.message.edit_text("❌ Withdrawal cancelled.", reply_markup=None)
         except:
@@ -953,7 +947,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Cancel Payment ──
     elif data == "cancel_payment":
         context.user_data.pop("upi_custom", None)
-        context.user_data.pop("withdraw_step", None)
         try:
             await query.message.edit_text("❌ *Payment Cancelled*\n\nNo charges were made.", parse_mode="Markdown", reply_markup=None)
         except Exception:
@@ -1040,9 +1033,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 f"🎉 *Commission Earned!*\n\n"
                                 f"Your referral <a href='tg://user?id={uid}'>{buyer.get('name', 'User')}</a> just purchased credits.\n"
                                 f"You earned ₹{commission} commission.\n"
-                                f"Total earned: ₹{ (await get_user(ref_uid))['earned_commission'] }",
-                                parse_mode="HTML"
-                            )
+                                f"Total earned: ₹{ (await get_user(ref_uid))['earned_commission'] }"
+                            ),
+                            parse_mode="HTML"
                         )
                     except Exception:
                         pass
@@ -1072,7 +1065,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid      = int(parts[2])
         amount   = int(parts[3])
         await orders.update_one({"order_id": order_id}, {"$set": {"status": "done"}})
-        # deduct earned_commission and increase withdrawn
         await users.update_one({"user_id": uid}, {"$inc": {"earned_commission": -amount, "withdrawn": amount}})
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Done ✅")
         try:
@@ -1189,8 +1181,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amount = int(text)
                 user = await get_user(user_id)
                 if amount > user.get("earned_commission", 0) or amount < MIN_WITHDRAW:
-                    await update.message.reply_text(f"❌ Amount must be between ₹{MIN_WITHDRAW} and your balance ₹{user.get('earned_commission', 0)}. Try again or /cancel",
-                                                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+                    await update.message.reply_text(
+                        f"❌ Amount must be between ₹{MIN_WITHDRAW} and your balance ₹{user.get('earned_commission', 0)}. Try again.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]])
+                    )
                     return
                 context.user_data["withdraw_amount"] = amount
                 context.user_data["withdraw_step"] = "bank_name"
@@ -1217,7 +1211,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Invalid UPI ID. Try again.")
                 return
             context.user_data["withdraw_upi"] = upi
-            # Show confirmation
             amount = context.user_data["withdraw_amount"]
             bank = context.user_data["withdraw_bank_name"]
             acc = context.user_data["withdraw_account_name"]
@@ -1235,14 +1228,9 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]
             ])
             await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
-            context.user_data.pop("withdraw_step")  # wait for confirm callback
+            context.user_data.pop("withdraw_step")
             return
         return
-
-    # ── Confirm withdrawal callback ──
-    if text == "✅ Confirm" and context.user_data.get("withdraw_amount"):
-        # This shouldn't be hit via text; handled via callback
-        pass
 
     # ── Custom Amount Input ──
     if context.user_data.get("upi_custom"):
@@ -1875,7 +1863,6 @@ async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAUL
     bank = context.user_data["withdraw_bank_name"]
     acc = context.user_data["withdraw_account_name"]
     upi = context.user_data["withdraw_upi"]
-    # Generate order
     order_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
     await orders.insert_one({
         "order_id": order_id,
@@ -1888,7 +1875,6 @@ async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAUL
         "upi_id": upi,
         "created": datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     })
-    # Notify payout channel
     user = await get_user(user_id)
     uname = f"@{user['username']}" if user.get("username") else user.get("name") or f"User {user_id}"
     payout_msg = (
@@ -1913,9 +1899,8 @@ async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAUL
     except Exception as e:
         await query.message.edit_text(f"❌ Failed to submit. Contact support. Error: {e}")
         return
-    # Clear user_data
-    for key in ["withdraw_amount", "withdraw_bank_name", "withdraw_account_name", "withdraw_upi"]:
-        context.user_data.pop(key, None)
+    for k in ("withdraw_amount", "withdraw_bank_name", "withdraw_account_name", "withdraw_upi"):
+        context.user_data.pop(k, None)
     await query.message.edit_text("✅ Withdrawal request submitted! We will process it shortly.", reply_markup=None)
 
 # ══════════════════════════════════════════════
@@ -1956,7 +1941,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("removeadmin",          removeadmin))
     app.add_handler(CommandHandler("adminlist",            adminlist))
     app.add_handler(CommandHandler("checkadmin",           checkadmin))
-    # Callback handlers
     app.add_handler(CallbackQueryHandler(confirm_withdraw_callback, pattern="confirm_withdraw"))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
