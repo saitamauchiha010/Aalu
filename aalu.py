@@ -16,7 +16,7 @@ from telegram.error import BadRequest
 API_URL        = "num.zvx.workers.dev/?key=DxD&mobile={}"
 API_URL2       = "https://tg-ap.vercel.app/api/tg?key=mynkx&term={}"
 VEHICLE_API    = "https://vehicle-15l4.onrender.com//lookup?rc={}"
-BOT_TOKEN      = "8745436475:AAEzTsfWTMo7KuUdVIcLwM5lwa3KVqWhILQ"
+BOT_TOKEN      = "8745436475:AAGnp-zEuPsGC2QAqJcKLkL3eL2DBXJpmDc"
 BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
 ADMIN_ID       = 6131370190
@@ -30,6 +30,9 @@ REFER_CREDITS      = 3
 DEDUCTION_CREDITS  = 1
 MODE               = "dual"
 UNLIMITED_MODE     = False
+
+REFERRAL_COMMISSION_PERCENT = 15  # % of purchase amount given as commission
+MIN_WITHDRAW = 15  # minimum ₹ to withdraw
 
 FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
@@ -70,17 +73,19 @@ async def get_user(user_id):
 async def create_user(user_id, referred_by=None, username=None, name=None, force_joined=False):
     ref_code = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
     user = {
-        "user_id"     : user_id,
-        "credits"     : START_CREDITS if force_joined else 0,
-        "joined"      : datetime.now(IST).strftime("%Y-%m-%d"),
-        "ref_code"    : ref_code,
-        "referred_by" : referred_by,
-        "referrals"   : 0,
-        "username"    : username,
-        "name"        : name,
-        "banned"      : False,
-        "banned_at"   : None,
-        "force_joined": force_joined
+        "user_id"         : user_id,
+        "credits"         : START_CREDITS if force_joined else 0,
+        "joined"          : datetime.now(IST).strftime("%Y-%m-%d"),
+        "ref_code"        : ref_code,
+        "referred_by"     : referred_by,
+        "referrals"       : 0,
+        "username"        : username,
+        "name"            : name,
+        "banned"          : False,
+        "banned_at"       : None,
+        "force_joined"    : force_joined,
+        "earned_commission": 0,
+        "withdrawn"       : 0
     }
     await users.insert_one(user)
     if referred_by and force_joined:
@@ -332,14 +337,21 @@ async def process_number(update, context, number, api_num=1):
         try:
             data = json.loads(result)
             if api_num == 2:
-                if data.get("success") == False and data.get("error") == "Upstream error":
-                    await update.message.reply_text("❌ *API Error*\n\nUpstream error from TG API. No credits deducted.\nPlease try again later.", parse_mode="Markdown")
-                    deduct_credits = False
-                    return
+                # Handle TG API specific errors that should not cost credits
                 r = data.get("result", {})
-                if not r.get("success", True) or "not found" in str(r.get("msg", "")).lower():
-                    await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number/username.", parse_mode="Markdown")
-                    return
+                if r.get("status") == False:
+                    error_msg = r.get("error", "") or r.get("msg", "")
+                    if "not found" in error_msg.lower() or "wait" in error_msg.lower():
+                        # Show the error but do not deduct credits
+                        await update.message.reply_text(
+                            f"❌ *TG Lookup Failed*\n\n`{error_msg}`\n\n_No credits deducted._",
+                            parse_mode="Markdown"
+                        )
+                        return
+                # Continue normal flow; will deduct credits if no early return
+                if not r.get("status", True) and not ("not found" in str(r.get("msg", "")).lower() or "wait" in str(r.get("error", "")).lower()):
+                    # If status false but not the known non-deduct cases, still deduct maybe
+                    pass
             if api_num == 1 and (not data.get("success", True) or "No Record" in str(data)):
                 await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
                 return
@@ -560,8 +572,9 @@ async def banusers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u in banned_users:
         name = u.get("name") or f"User {u['user_id']}"
         ban_date = u.get("banned_at") or "Unknown"
-        msg += f"🆔 [{name}](tg://user?id={u['user_id']})\n📅 Banned: {ban_date}\n\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+        # HTML format for clickable name + ID
+        msg += f'🆔 <a href="tg://user?id={u["user_id"]}">{name}</a> (ID: <code>{u["user_id"]}</code>)\n📅 Banned: {ban_date}\n\n'
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               CHECK USER
@@ -584,6 +597,13 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name     = user.get("name") or "Unknown"
     banned   = "Yes 🚫" if user.get("banned") else "No ✅"
     fj       = "Yes ✅" if user.get("force_joined") else "No ❌"
+    ref_by   = user.get("referred_by")
+    if ref_by:
+        ref_user = await get_user(ref_by)
+        ref_name = f'<a href="tg://user?id={ref_user["user_id"]}">{ref_user.get("name") or "Unknown"}</a>' if ref_user else "Unknown"
+        ref_text = ref_name
+    else:
+        ref_text = "None"
 
     referred_users = await users.find(
         {"referred_by": uid}, {"username": 1, "user_id": 1, "name": 1}
@@ -592,27 +612,30 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     refer_list = ""
     for r in referred_users:
         rname = r.get("name") or f"User {r['user_id']}"
-        refer_list += f"  • [{rname}](tg://user?id={r['user_id']})\n"
+        refer_list += f'  • <a href="tg://user?id={r["user_id"]}">{rname}</a>\n'
 
     msg = (
         "👤 *User Details*\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📛 Name: [{name}](tg://user?id={uid})\n"
+        f"📛 Name: <a href='tg://user?id={uid}'>{name}</a>\n"
         f"🔖 Username: {uname}\n"
-        f"🆔 User ID: `{uid}`\n"
+        f"🆔 User ID: <code>{uid}</code>\n"
         f"💰 Credits: {user['credits']}\n"
+        f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
+        f"🏧 Withdrawn: ₹{user.get('withdrawn', 0)}\n"
         f"📅 Joined: {user['joined']}\n"
         f"👥 Referrals: {user['referrals']}\n"
+        f"🔗 Referred By: {ref_text}\n"
         f"✅ Force Joined: {fj}\n"
         f"🚫 Banned: {banned}\n"
-        f"🔗 [Refer Link]({ref_link})\n"
+        f"🔗 <a href='{ref_link}'>Refer Link</a>\n"
     )
     if refer_list:
         msg += f"\n👥 *Referred Users:*\n{refer_list}"
     else:
         msg += "\n👥 Referred Users: None"
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               MSG USER
@@ -633,7 +656,7 @@ async def msg_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(chat_id=uid, text=message)
         uname = f"@{user['username']}" if user.get("username") else user.get("name") or str(uid)
-        await update.message.reply_text(f"✅ Message sent to {uname} (`{uid}`)", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Message sent to {uname} (<code>{uid}</code>)", parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Failed: {str(e)}")
 
@@ -656,9 +679,9 @@ async def referlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 *Full Refer List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(all_users, 1):
         name = u.get("name") or f"User {u['user_id']}"
-        msg += f"{i}. [{name}](tg://user?id={u['user_id']}) — {u['referrals']} refers\n"
+        msg += f'{i}. <a href="tg://user?id={u["user_id"]}">{name}</a> — {u["referrals"]} refers\n'
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               REFER LEADERBOARD
@@ -679,9 +702,9 @@ async def referstat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, u in enumerate(top_users):
         medal = medals[i] if i < 3 else f"{i+1}."
         name  = u.get("name") or f"User {u['user_id']}"
-        msg  += f"{medal} [{name}](tg://user?id={u['user_id']}) — *{u['referrals']}* refers\n"
+        msg  += f'{medal} <a href="tg://user?id={u["user_id"]}">{name}</a> — *{u["referrals"]}* refers\n'
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               VOUCHER SYSTEM
@@ -767,7 +790,7 @@ async def listvouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ══════════════════════════════════════════════
-#               BUY CREDITS - UPI (NEW)
+#               BUY CREDITS - UPI
 # ══════════════════════════════════════════════
 
 async def buy_credits_menu(update, context):
@@ -796,6 +819,7 @@ async def process_payment(update, query, amount, credits):
         "amount"  : amount,
         "credits" : credits,
         "status"  : "pending",
+        "type"    : "buy",
         "created" : datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     })
     keyboard = InlineKeyboardMarkup([
@@ -873,8 +897,41 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "credits_buy":
-        # send buy menu in same chat
         await buy_credits_menu(query, context)
+        await query.answer()
+        return
+
+    # ── Withdraw callbacks ──
+    elif data == "withdraw_start":
+        user = await get_user(user_id)
+        if not user:
+            await query.answer("Account not found.", show_alert=True)
+            return
+        if user.get("earned_commission", 0) < MIN_WITHDRAW:
+            await query.answer(f"Minimum withdrawal is ₹{MIN_WITHDRAW}. Your balance is ₹{user.get('earned_commission', 0)}.", show_alert=True)
+            return
+        context.user_data["withdraw_step"] = "amount"
+        await query.message.reply_text(
+            "💸 *Withdraw Commission*\n\n"
+            f"Your earned commission: ₹{user.get('earned_commission', 0)}\n"
+            f"Minimum withdraw: ₹{MIN_WITHDRAW}\n\n"
+            "Please enter the amount you want to withdraw (₹):",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]])
+        )
+        await query.answer()
+        return
+
+    elif data == "cancel_withdraw":
+        context.user_data.pop("withdraw_step", None)
+        context.user_data.pop("withdraw_amount", None)
+        context.user_data.pop("withdraw_bank_name", None)
+        context.user_data.pop("withdraw_account_name", None)
+        context.user_data.pop("withdraw_upi", None)
+        try:
+            await query.message.edit_text("❌ Withdrawal cancelled.", reply_markup=None)
+        except:
+            pass
         await query.answer()
         return
 
@@ -896,8 +953,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Cancel Payment ──
     elif data == "cancel_payment":
         context.user_data.pop("upi_custom", None)
-        context.user_data.pop("upi_step", None)
-        context.user_data.pop("upi_amount", None)
+        context.user_data.pop("withdraw_step", None)
         try:
             await query.message.edit_text("❌ *Payment Cancelled*\n\nNo charges were made.", parse_mode="Markdown", reply_markup=None)
         except Exception:
@@ -960,7 +1016,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 await query.answer("✅ Payment submitted!", show_alert=True)
 
-    # ── Mark as Done ──
+    # ── Mark as Done (Buy) ──
     elif data.startswith("done_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -968,6 +1024,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         credits  = int(parts[3])
         await update_credits(uid, credits)
         await orders.update_one({"order_id": order_id}, {"$set": {"status": "done"}})
+        # Give commission to referrer if exists
+        order = await orders.find_one({"order_id": order_id})
+        if order and order.get("type", "buy") == "buy":
+            buyer = await get_user(uid)
+            if buyer and buyer.get("referred_by"):
+                ref_uid = buyer["referred_by"]
+                commission = int(order["amount"] * REFERRAL_COMMISSION_PERCENT / 100)
+                if commission > 0:
+                    await users.update_one({"user_id": ref_uid}, {"$inc": {"earned_commission": commission}})
+                    try:
+                        await context.bot.send_message(
+                            chat_id=ref_uid,
+                            text=(
+                                f"🎉 *Commission Earned!*\n\n"
+                                f"Your referral <a href='tg://user?id={uid}'>{buyer.get('name', 'User')}</a> just purchased credits.\n"
+                                f"You earned ₹{commission} commission.\n"
+                                f"Total earned: ₹{ (await get_user(ref_uid))['earned_commission'] }",
+                                parse_mode="HTML"
+                            )
+                        )
+                    except Exception:
+                        pass
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Done ✅")
         try:
             await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
@@ -987,7 +1065,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Cancel Order (Admin in payout channel) ──
+    # ── Mark Withdraw as Done ──
+    elif data.startswith("withdrawdone_"):
+        parts    = data.split("_")
+        order_id = parts[1]
+        uid      = int(parts[2])
+        amount   = int(parts[3])
+        await orders.update_one({"order_id": order_id}, {"$set": {"status": "done"}})
+        # deduct earned_commission and increase withdrawn
+        await users.update_one({"user_id": uid}, {"$inc": {"earned_commission": -amount, "withdrawn": amount}})
+        new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Done ✅")
+        try:
+            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+        except Exception:
+            pass
+        order = await orders.find_one({"order_id": order_id})
+        upi_id = order.get("upi_id", "N/A") if order else "N/A"
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text=(
+                    f"✅ *Withdrawal Successful!*\n\n"
+                    f"Amount withdrawn: ₹{amount}\n"
+                    f"To UPI ID: `{upi_id}`\n\n"
+                    "Thank you for using DeepTrace! 🙏"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    # ── Cancel Withdraw Order (Admin) ──
+    elif data.startswith("cancelwithdraworder_"):
+        parts    = data.split("_")
+        order_id = parts[1]
+        uid      = int(parts[2])
+        await orders.update_one({"order_id": order_id}, {"$set": {"status": "cancelled"}})
+        new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Cancelled ❌")
+        try:
+            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+        except Exception:
+            pass
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text=(
+                    "❌ *Withdrawal Cancelled*\n\n"
+                    "Your withdrawal request has been cancelled.\n"
+                    "If this is a mistake, contact @DarkGalaxxyy"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    # ── Cancel Order (Buy) ──
     elif data.startswith("cancelorder_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1049,6 +1181,69 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bot     = context.bot
 
+    # ── Withdrawal flow steps ──
+    if context.user_data.get("withdraw_step"):
+        step = context.user_data["withdraw_step"]
+        if step == "amount":
+            if text.isdigit():
+                amount = int(text)
+                user = await get_user(user_id)
+                if amount > user.get("earned_commission", 0) or amount < MIN_WITHDRAW:
+                    await update.message.reply_text(f"❌ Amount must be between ₹{MIN_WITHDRAW} and your balance ₹{user.get('earned_commission', 0)}. Try again or /cancel",
+                                                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+                    return
+                context.user_data["withdraw_amount"] = amount
+                context.user_data["withdraw_step"] = "bank_name"
+                await update.message.reply_text("🏦 Enter your Bank Name:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+            else:
+                await update.message.reply_text("❌ Invalid amount. Enter a number (₹).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+            return
+
+        elif step == "bank_name":
+            context.user_data["withdraw_bank_name"] = text
+            context.user_data["withdraw_step"] = "account_name"
+            await update.message.reply_text("📛 Enter your Bank Account Name:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+            return
+
+        elif step == "account_name":
+            context.user_data["withdraw_account_name"] = text
+            context.user_data["withdraw_step"] = "upi"
+            await update.message.reply_text("📱 Enter your UPI ID:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]]))
+            return
+
+        elif step == "upi":
+            upi = text.strip()
+            if not upi:
+                await update.message.reply_text("❌ Invalid UPI ID. Try again.")
+                return
+            context.user_data["withdraw_upi"] = upi
+            # Show confirmation
+            amount = context.user_data["withdraw_amount"]
+            bank = context.user_data["withdraw_bank_name"]
+            acc = context.user_data["withdraw_account_name"]
+            msg = (
+                "💸 *Confirm Withdrawal*\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Amount: ₹{amount}\n"
+                f"Bank: {bank}\n"
+                f"Account Name: {acc}\n"
+                f"UPI ID: `{upi}`\n\n"
+                "Is this correct?"
+            )
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Confirm", callback_data="confirm_withdraw"),
+                 InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]
+            ])
+            await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+            context.user_data.pop("withdraw_step")  # wait for confirm callback
+            return
+        return
+
+    # ── Confirm withdrawal callback ──
+    if text == "✅ Confirm" and context.user_data.get("withdraw_amount"):
+        # This shouldn't be hit via text; handled via callback
+        pass
+
     # ── Custom Amount Input ──
     if context.user_data.get("upi_custom"):
         if text.isdigit() and int(text) >= MIN_CUSTOM_AMOUNT:
@@ -1062,6 +1257,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "amount"  : amount,
                 "credits" : credits,
                 "status"  : "pending",
+                "type"    : "buy",
                 "created" : datetime.now(IST).strftime("%Y-%m-%d %H:%M")
             })
             keyboard = InlineKeyboardMarkup([
@@ -1185,6 +1381,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🆔 User ID: `{user_id}`\n"
             f"💰 Credits: *{user['credits']}*{unlimited_note}\n"
+            f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"📅 Joined: {user['joined']}\n"
             f"👥 Referrals: {user['referrals']}\n"
             "━━━━━━━━━━━━━━━━━━━━",
@@ -1220,17 +1417,20 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔗 Refer":
         user     = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
-        await update.message.reply_text(
+        msg = (
             "🔗 *Refer & Earn*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "Share your link and earn credits\n"
-            "for every friend who joins!\n\n"
             f"🔗 Your Link:\n`{ref_link}`\n\n"
             f"💰 Reward: *{REFER_CREDITS} credits* per refer\n"
             f"👥 Total Referrals: *{user['referrals']}*\n"
-            "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown"
+            f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
+            f"🏧 Minimum Withdraw: ₹{MIN_WITHDRAW}\n"
+            "━━━━━━━━━━━━━━━━━━━━"
         )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💸 Withdraw Commission", callback_data="withdraw_start")]
+        ])
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
         return
 
     # ── Buy Credits ──
@@ -1319,7 +1519,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/msg` `<uid> <message>`\n"
             "`/referlist`\n"
             "`/stats`\n"
-            "`/id` `<@username>`\n\n"
+            "`/id` `<@username>`\n"
+            "`/orderid` `<order_id>`\n\n"
             "🛡️ *Admin & Owner:*\n"
             "`/addcredits` `<uid> <amount>`\n"
             "`/removecredits` `<uid> <amount>`\n"
@@ -1533,6 +1734,37 @@ async def setdeductioncredits(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="Markdown"
     )
 
+# ── Order ID lookup (Owner only) ──
+async def orderid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args:
+        await update.message.reply_text("📌 Usage: /orderid <order_id>")
+        return
+    oid = context.args[0]
+    order = await orders.find_one({"order_id": oid})
+    if not order:
+        await update.message.reply_text("❌ Order not found.")
+        return
+    msg = (
+        f"📦 *Order Details*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔖 Order ID: `{order['order_id']}`\n"
+        f"👤 User ID: `{order['user_id']}`\n"
+        f"💵 Amount: ₹{order['amount']}\n"
+        f"📊 Status: {order['status']}\n"
+        f"📅 Created: {order['created']}\n"
+    )
+    if order.get("type") == "withdraw":
+        msg += (
+            f"🏦 Bank: {order.get('bank_name', 'N/A')}\n"
+            f"📛 Account: {order.get('account_name', 'N/A')}\n"
+            f"📱 UPI: `{order.get('upi_id', 'N/A')}`\n"
+        )
+    else:
+        msg += f"💰 Credits: {order.get('credits', 'N/A')}\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 # ══════════════════════════════════════════════
 #               OWNER ADMIN MANAGEMENT
 # ══════════════════════════════════════════════
@@ -1594,15 +1826,15 @@ async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     all_admins = await admins.find({}).to_list(length=100)
     msg = "🛡️ *Admin List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    msg += f"👑 Owner: [Owner](tg://user?id={ADMIN_ID})\n\n"
+    msg += f"👑 Owner: <a href='tg://user?id={ADMIN_ID}'>Owner</a>\n\n"
     if not all_admins:
         msg += "_No additional admins._"
     else:
         for i, a in enumerate(all_admins, 1):
             aname = a.get("name") or f"User {a['user_id']}"
-            msg += f"{i}. [{aname}](tg://user?id={a['user_id']}) — Added: {a.get('added', 'N/A')}\n"
+            msg += f'{i}. <a href="tg://user?id={a["user_id"]}">{aname}</a> — Added: {a.get("added", "N/A")}\n'
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 async def checkadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1627,6 +1859,64 @@ async def checkadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg += "_No actions logged._"
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+# ══════════════════════════════════════════════
+#               CONFIRM WITHDRAW CALLBACK
+# ══════════════════════════════════════════════
+
+async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    if not context.user_data.get("withdraw_amount"):
+        await query.message.edit_text("❌ Session expired. Start again.")
+        return
+    amount = context.user_data["withdraw_amount"]
+    bank = context.user_data["withdraw_bank_name"]
+    acc = context.user_data["withdraw_account_name"]
+    upi = context.user_data["withdraw_upi"]
+    # Generate order
+    order_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+    await orders.insert_one({
+        "order_id": order_id,
+        "user_id": user_id,
+        "amount": amount,
+        "status": "pending",
+        "type": "withdraw",
+        "bank_name": bank,
+        "account_name": acc,
+        "upi_id": upi,
+        "created": datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+    })
+    # Notify payout channel
+    user = await get_user(user_id)
+    uname = f"@{user['username']}" if user.get("username") else user.get("name") or f"User {user_id}"
+    payout_msg = (
+        "🏧 *New Withdrawal Request*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📛 Name: {user.get('name', 'N/A')}\n"
+        f"👤 Username: {uname}\n"
+        f"🆔 User ID: `{user_id}`\n"
+        f"💵 Amount: ₹{amount}\n"
+        f"🏦 Bank: {bank}\n"
+        f"📛 Account: {acc}\n"
+        f"📱 UPI: `{upi}`\n"
+        f"📊 Status: Pending ⏳\n\n"
+        f"🔖 Order ID: `{order_id}`"
+    )
+    payout_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Mark as Done", callback_data=f"withdrawdone_{order_id}_{user_id}_{amount}"),
+         InlineKeyboardButton("❌ Cancel Order", callback_data=f"cancelwithdraworder_{order_id}_{user_id}")]
+    ])
+    try:
+        await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, parse_mode="Markdown", reply_markup=payout_kb)
+    except Exception as e:
+        await query.message.edit_text(f"❌ Failed to submit. Contact support. Error: {e}")
+        return
+    # Clear user_data
+    for key in ["withdraw_amount", "withdraw_bank_name", "withdraw_account_name", "withdraw_upi"]:
+        context.user_data.pop(key, None)
+    await query.message.edit_text("✅ Withdrawal request submitted! We will process it shortly.", reply_markup=None)
 
 # ══════════════════════════════════════════════
 #               MAIN
@@ -1656,6 +1946,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("setstartcredits",      setstartcredits))
     app.add_handler(CommandHandler("setrefercredits",      setrefercredits))
     app.add_handler(CommandHandler("setdeductioncredits",  setdeductioncredits))
+    app.add_handler(CommandHandler("orderid",              orderid))
     app.add_handler(CommandHandler("ban",                  ban))
     app.add_handler(CommandHandler("unban",                unban))
     app.add_handler(CommandHandler("banusers",             banusers))
@@ -1665,6 +1956,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("removeadmin",          removeadmin))
     app.add_handler(CommandHandler("adminlist",            adminlist))
     app.add_handler(CommandHandler("checkadmin",           checkadmin))
+    # Callback handlers
+    app.add_handler(CallbackQueryHandler(confirm_withdraw_callback, pattern="confirm_withdraw"))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     print("Bot is running...")
