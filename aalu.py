@@ -15,7 +15,7 @@ from telegram.error import BadRequest
 
 API_URL        = "num.zvx.workers.dev/?key=DxD&mobile={}"
 API_URL2       = "https://telegram-to-num-gray.vercel/sms?key=Demo&term={}"
-VEHICLE_API    = "https://vehicle-15l4.onrender.com//lookup?rc={}"
+VEHICLE_API    = "https://magical-knives-drum-condo.trycloudflare.com/vehicle-info?vno={}"
 BOT_TOKEN      = "8745436475:AAEzTsfWTMo7KuUdVIcLwM5lwa3KVqWhILQ"
 BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
