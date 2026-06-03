@@ -334,12 +334,15 @@ async def process_number(update, context, number, api_num=1):
         try:
             data = json.loads(result)
             if api_num == 2:
-                # Check for non-deductable errors
-                if data.get("success") == False:
-                    msg_text = data.get("msg", "")
-                    if "Phone number not found" in msg_text or "not found" in msg_text.lower():
-                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
-                        return
+                # --- NEW START (add this block) ---
+                if data.get("status") == False and "Daily limit exceeded" in data.get("error", ""):
+                    await update.message.reply_text(
+                        "❌ *TG API Limit Reached*\n\nDaily limit exceeded. Please try again later.\n_No credits deducted._",
+                        parse_mode="Markdown"
+                    )
+                    return
+                # --- NEW END ---
+            
                 # Also handle result.error for wait or not found
                 r = data.get("result", {})
                 if r.get("status") == False:
