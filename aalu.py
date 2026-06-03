@@ -198,8 +198,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user.get("banned"):
         await update.message.reply_text(
-            "🚫 *Access Denied*\n\nYou have been banned from using this bot.\nContact @DarkGalaxxyy for support.",
-            parse_mode="Markdown"
+            "<b>🚫 Access Denied</b>\n\nYou have been banned from using this bot.\nContact @DarkGalaxxyy for support.",
+            parse_mode="HTML"
         )
         return
 
@@ -207,14 +207,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not joined:
         await update.message.reply_text(
             "╔══════════════════════╗\n"
-            "        🔐 *ACCESS RESTRICTED*\n"
+            "        🔐 <b>ACCESS RESTRICTED</b>\n"
             "╚══════════════════════╝\n\n"
             "To use this bot, you must join\n"
             "all of the following:\n\n"
             "📢 Official Channel\n"
             "👥 Group 1  •  👥 Group 2\n\n"
             "After joining, send /start again ↩️",
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=join_keyboard()
         )
         return
@@ -239,29 +239,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     welcome_msg = (
-        f"🎊 *Welcome aboard, {name}!*\n\n"
-        f"🎁 You've received *{START_CREDITS} free credits* to get started!\n\n"
-    ) if is_new else f"👋 *Welcome back, {name}!*\n\n"
+        f"🎊 <b>Welcome aboard, {name}!</b>\n\n"
+        f"🎁 You've received <b>{START_CREDITS} free credits</b> to get started!\n\n"
+    ) if is_new else f"👋 <b>Welcome back, {name}!</b>\n\n"
 
-    unlimited_note = "♾️ *Unlimited Mode is ON* — searches are free!\n\n" if UNLIMITED_MODE else ""
+    unlimited_note = "♾️ <b>Unlimited Mode is ON</b> — searches are free!\n\n" if UNLIMITED_MODE else ""
 
     msg = (
         f"{welcome_msg}{unlimited_note}"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "🔍 *DeepTrace* — Fetch detailed info\n"
+        "🔍 <b>DeepTrace</b> — Fetch detailed info\n"
         "about any mobile number instantly.\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "📌 *Available APIs & Commands*\n\n"
-        "`/num <number>` — Mobile Number Info (API 1)\n"
-        "`/tgnum <number>` — Telegram UID Lookup (API 2)\n"
-        "`/vehicle <reg_no>` — Vehicle Registration Info 🚗\n"
-        "`/referstat` — Refer leaderboard\n"
-        "`/redeem <code>` — Redeem voucher\n\n"
+        "📌 <b>Available APIs & Commands</b>\n\n"
+        "<code>/num &lt;number&gt;</code> — Mobile Number Info (API 1)\n"
+        "<code>/tgnum &lt;number&gt;</code> — Telegram UID Lookup (API 2)\n"
+        "<code>/vehicle &lt;reg_no&gt;</code> — Vehicle Registration Info 🚗\n"
+        "<code>/referstat</code> — Refer leaderboard\n"
+        "<code>/redeem &lt;code&gt;</code> — Redeem voucher\n\n"
         "💡 Use the buttons below to navigate."
     )
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=links_kb)
+    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=links_kb)
     user_is_admin = await is_admin(user_id)
-    await update.message.reply_text("🗂 *Main Menu*", parse_mode="Markdown", reply_markup=get_main_keyboard(user_id, is_admin_user=user_is_admin))
+    await update.message.reply_text("🗂 <b>Main Menu</b>", parse_mode="HTML", reply_markup=get_main_keyboard(user_id, is_admin_user=user_is_admin))
+
+# ── Helper: insufficient credits inline keyboard ──
+def insufficient_credits_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Buy Credits", callback_data="credits_buy"),
+         InlineKeyboardButton("🔗 Refer", callback_data="credits_refer")]
+    ])
 
 # ══════════════════════════════════════════════
 #               PROCESS NUMBER (SHARED)
@@ -273,7 +280,7 @@ async def process_number(update, context, number, api_num=1):
     bot       = context.bot
 
     if MODE == "maintenance":
-        await update.message.reply_text("🔧 *Maintenance Mode*\n\nBot is under maintenance. Please try again later.", parse_mode="Markdown")
+        await update.message.reply_text("<b>🔧 Maintenance Mode</b>\n\nBot is under maintenance. Please try again later.", parse_mode="HTML")
         return
     if MODE == "group" and chat_type == "private":
         await update.message.reply_text("⚠️ This bot only works in groups.")
@@ -284,7 +291,7 @@ async def process_number(update, context, number, api_num=1):
 
     joined = await force_join_check(bot, user_id)
     if not joined:
-        await update.message.reply_text("⚠️ *Access Restricted*\n\nJoin all required channels first.", parse_mode="Markdown", reply_markup=join_keyboard())
+        await update.message.reply_text("⚠️ <b>Access Restricted</b>\n\nJoin all required channels first.", parse_mode="HTML", reply_markup=join_keyboard())
         return
 
     user = await get_user(user_id)
@@ -296,26 +303,16 @@ async def process_number(update, context, number, api_num=1):
         return
 
     if not UNLIMITED_MODE and user["credits"] <= 0:
-        available_voucher = await vouchers.find_one({
-            "$expr": {"$lt": ["$uses", "$max_uses"]},
-            "used_by": {"$nin": [user_id]}
-        })
         zero_msg = (
-            "❌ *Insufficient Credits*\n\n"
-            "You have *0 credits* remaining.\n\n"
-            "💡 *Ways to earn credits:*\n"
+            "❌ <b>Insufficient Credits</b>\n\n"
+            "You have <b>0 credits</b> remaining.\n\n"
+            "💡 <b>Ways to earn credits:</b>\n"
             "• Refer friends → 🔗 Refer button\n"
-            "• Redeem a voucher → /redeem\n"
-            "• Purchase credits → 💳 Buy Credits"
+            "• Redeem a voucher → <code>/redeem</code>\n"
+            "• Purchase credits → 💳 Buy Credits\n\n"
+            "Use the buttons below:"
         )
-        if available_voucher:
-            zero_msg += (
-                f"\n\n🎟️ *Active Voucher Available!*\n"
-                f"Use code: `{available_voucher['code']}`\n"
-                f"Gives: *{available_voucher['credits']} credits*\n"
-                f"Type: `/redeem {available_voucher['code']}`"
-            )
-        await update.message.reply_text(zero_msg, parse_mode="Markdown")
+        await update.message.reply_text(zero_msg, parse_mode="HTML", reply_markup=insufficient_credits_kb())
         return
 
     try:
@@ -330,69 +327,68 @@ async def process_number(update, context, number, api_num=1):
         result   = response.text.strip()
 
         if not result:
-            await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
+            await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
             return
 
         deduct_credits = True
         try:
             data = json.loads(result)
             if api_num == 2:
-                # Handle TG API errors that should NOT cost credits
+                # Check for non-deductable errors
+                if data.get("success") == False:
+                    msg_text = data.get("msg", "")
+                    if "Phone number not found" in msg_text or "not found" in msg_text.lower():
+                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
+                        return
+                # Also handle result.error for wait or not found
                 r = data.get("result", {})
                 if r.get("status") == False:
-                    error_msg = r.get("error", "") or r.get("msg", "")
-                    if "not found" in error_msg.lower() or "wait" in error_msg.lower():
-                        await update.message.reply_text(
-                            f"❌ *TG Lookup Failed*\n\n`{error_msg}`\n\n_No credits deducted._",
-                            parse_mode="Markdown"
-                        )
+                    err = r.get("error", "") or r.get("msg", "")
+                    if "not found" in err.lower() or "wait" in err.lower():
+                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
                         return
-                if not r.get("status", True) and not ("not found" in str(r.get("msg", "")).lower() or "wait" in str(r.get("error", "")).lower()):
-                    pass
             if api_num == 1 and (not data.get("success", True) or "No Record" in str(data)):
-                await update.message.reply_text("❌ *No Result Found*\n\nNo data available for this number.", parse_mode="Markdown")
+                await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
                 return
 
             if deduct_credits:
                 if UNLIMITED_MODE:
-                    credit_note = "♾️ _Unlimited Mode — no credits deducted_"
+                    credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
                 else:
                     new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 _Credits remaining: {new_balance}_"
+                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
                 if "Api_BY" in data:
                     data["Api_BY"] = CUSTOM_NAME
                 pretty = json.dumps(data, indent=2, ensure_ascii=False)
-                await update.message.reply_text(f"```\n{pretty}\n```\n\n{credit_note}", parse_mode="Markdown")
+                await update.message.reply_text(f"<pre>{pretty}</pre>\n\n{credit_note}", parse_mode="HTML")
         except json.JSONDecodeError:
             if deduct_credits:
                 if not UNLIMITED_MODE:
                     new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 _Credits remaining: {new_balance}_"
+                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
                 else:
-                    credit_note = "♾️ _Unlimited Mode ON_"
-                await update.message.reply_text(f"{result}\n\n{credit_note}", parse_mode="Markdown")
+                    credit_note = "♾️ <i>Unlimited Mode ON</i>"
+                await update.message.reply_text(f"{result}\n\n{credit_note}", parse_mode="HTML")
             else:
-                await update.message.reply_text(f"{result}\n\n_No credits deducted._", parse_mode="Markdown")
+                await update.message.reply_text(f"{result}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
 
     except requests.exceptions.Timeout:
-        await update.message.reply_text("⏱ *Request Timed Out*\n\nPlease try again.", parse_mode="Markdown")
+        await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nPlease try again.", parse_mode="HTML")
     except requests.exceptions.ConnectionError:
-        await update.message.reply_text("📡 *Connection Error*\n\nUnable to connect to the API.", parse_mode="Markdown")
+        await update.message.reply_text("📡 <b>Connection Error</b>\n\nUnable to connect to the API.", parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-
 async def num(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("📌 *Usage:* `/num <number>`\n\n*Example:* `/num 9876543210`", parse_mode="Markdown")
+        await update.message.reply_text("📌 <b>Usage:</b> <code>/num &lt;number&gt;</code>\n\n<b>Example:</b> <code>/num 9876543210</code>", parse_mode="HTML")
         return
     await process_number(update, context, context.args[0], api_num=1)
 
-
 async def tgnum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("📌 *Usage:* `/tgnum <number>`\n\n*Example:* `/tgnum 6116352810`", parse_mode="Markdown")
+        await update.message.reply_text("📌 <b>Usage:</b> <code>/tgnum &lt;number&gt;</code>\n\n<b>Example:</b> <code>/tgnum 6116352810</code>", parse_mode="HTML")
         return
     await process_number(update, context, context.args[0], api_num=2)
 
@@ -406,7 +402,7 @@ async def process_vehicle(update, context, rc_number):
     bot       = context.bot
 
     if MODE == "maintenance":
-        await update.message.reply_text("🔧 *Maintenance Mode*\n\nBot is under maintenance. Please try again later.", parse_mode="Markdown")
+        await update.message.reply_text("<b>🔧 Maintenance Mode</b>\n\nBot is under maintenance. Please try again later.", parse_mode="HTML")
         return
     if MODE == "group" and chat_type == "private":
         await update.message.reply_text("⚠️ This bot only works in groups.")
@@ -417,7 +413,7 @@ async def process_vehicle(update, context, rc_number):
 
     joined = await force_join_check(bot, user_id)
     if not joined:
-        await update.message.reply_text("⚠️ *Access Restricted*\n\nJoin all required channels first.", parse_mode="Markdown", reply_markup=join_keyboard())
+        await update.message.reply_text("⚠️ <b>Access Restricted</b>\n\nJoin all required channels first.", parse_mode="HTML", reply_markup=join_keyboard())
         return
 
     user = await get_user(user_id)
@@ -429,26 +425,16 @@ async def process_vehicle(update, context, rc_number):
         return
 
     if not UNLIMITED_MODE and user["credits"] <= 0:
-        available_voucher = await vouchers.find_one({
-            "$expr": {"$lt": ["$uses", "$max_uses"]},
-            "used_by": {"$nin": [user_id]}
-        })
         zero_msg = (
-            "❌ *Insufficient Credits*\n\n"
-            "You have *0 credits* remaining.\n\n"
-            "💡 *Ways to earn credits:*\n"
+            "❌ <b>Insufficient Credits</b>\n\n"
+            "You have <b>0 credits</b> remaining.\n\n"
+            "💡 <b>Ways to earn credits:</b>\n"
             "• Refer friends → 🔗 Refer button\n"
-            "• Redeem a voucher → /redeem\n"
-            "• Purchase credits → 💳 Buy Credits"
+            "• Redeem a voucher → <code>/redeem</code>\n"
+            "• Purchase credits → 💳 Buy Credits\n\n"
+            "Use the buttons below:"
         )
-        if available_voucher:
-            zero_msg += (
-                f"\n\n🎟️ *Active Voucher Available!*\n"
-                f"Use code: `{available_voucher['code']}`\n"
-                f"Gives: *{available_voucher['credits']} credits*\n"
-                f"Type: `/redeem {available_voucher['code']}`"
-            )
-        await update.message.reply_text(zero_msg, parse_mode="Markdown")
+        await update.message.reply_text(zero_msg, parse_mode="HTML", reply_markup=insufficient_credits_kb())
         return
 
     try:
@@ -461,33 +447,32 @@ async def process_vehicle(update, context, rc_number):
 
         if not non_null:
             await update.message.reply_text(
-                "❌ *No Result Found*\n\nNo data available for this vehicle number.",
-                parse_mode="Markdown"
+                "❌ <b>No Result Found</b>\n\nNo data available for this vehicle number.",
+                parse_mode="HTML"
             )
             return
 
         if UNLIMITED_MODE:
-            credit_note = "♾️ _Unlimited Mode — no credits deducted_"
+            credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
         else:
             new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-            credit_note = f"💰 _Credits remaining: {new_balance}_"
+            credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
         pretty = json.dumps(data, indent=2, ensure_ascii=False)
-        await update.message.reply_text(f"```\n{pretty}\n```\n\n{credit_note}", parse_mode="Markdown")
+        await update.message.reply_text(f"<pre>{pretty}</pre>\n\n{credit_note}", parse_mode="HTML")
 
     except requests.exceptions.Timeout:
-        await update.message.reply_text("⏱ *Request Timed Out*\n\nPlease try again.", parse_mode="Markdown")
+        await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nPlease try again.", parse_mode="HTML")
     except requests.exceptions.ConnectionError:
-        await update.message.reply_text("📡 *Connection Error*\n\nUnable to connect to the API.", parse_mode="Markdown")
+        await update.message.reply_text("📡 <b>Connection Error</b>\n\nUnable to connect to the API.", parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
-
 
 async def vehicle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
-            "📌 *Usage:*\n`/vehicle <vehicle number>`\n\n*Example:*\n`/vehicle UP78AB1234`",
-            parse_mode="Markdown"
+            "📌 <b>Usage:</b>\n<code>/vehicle &lt;vehicle number&gt;</code>\n\n<b>Example:</b>\n<code>/vehicle UP78AB1234</code>",
+            parse_mode="HTML"
         )
         return
     await process_vehicle(update, context, context.args[0])
@@ -508,12 +493,12 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         chat = await context.bot.get_chat(f"@{username}")
         await update.message.reply_text(
-            f"🆔 *User ID for @{username}:* `{chat.id}`\n"
+            f"🆔 <b>User ID for @{username}:</b> <code>{chat.id}</code>\n"
             f"👤 Name: {chat.full_name or 'N/A'}",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     except BadRequest as e:
-        await update.message.reply_text(f"❌ Error: {e.message}", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Error: {e.message}", parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to get ID: {str(e)}")
 
@@ -531,14 +516,13 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await users.update_one({"user_id": uid}, {"$set": {"banned": True, "banned_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")}})
     if result.modified_count:
         await log_admin_action(update.effective_user.id, "ban", uid, f"Banned user {uid}")
-        await update.message.reply_text(f"🚫 User `{uid}` has been banned.", parse_mode="Markdown")
+        await update.message.reply_text(f"🚫 User <code>{uid}</code> has been banned.", parse_mode="HTML")
         try:
             await context.bot.send_message(chat_id=uid, text="🚫 You have been banned from this bot.\nContact @DarkGalaxxyy for support.")
         except Exception:
             pass
     else:
         await update.message.reply_text("❌ User not found.")
-
 
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -550,7 +534,7 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await users.update_one({"user_id": uid}, {"$set": {"banned": False, "banned_at": None}})
     if result.modified_count:
         await log_admin_action(update.effective_user.id, "unban", uid, f"Unbanned user {uid}")
-        await update.message.reply_text(f"✅ User `{uid}` has been unbanned.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ User <code>{uid}</code> has been unbanned.", parse_mode="HTML")
         try:
             await context.bot.send_message(chat_id=uid, text="✅ You have been unbanned!\nYou can now use the bot again.")
         except Exception:
@@ -565,11 +549,10 @@ async def banusers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not banned_users:
         await update.message.reply_text("✅ No banned users found.")
         return
-    msg = "🚫 *Banned Users List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🚫 <b>Banned Users List</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for u in banned_users:
         name = u.get("name") or f"User {u['user_id']}"
         ban_date = u.get("banned_at") or "Unknown"
-        # HTML format for clickable name + ID
         msg += f'🆔 <a href="tg://user?id={u["user_id"]}">{name}</a> (ID: <code>{u["user_id"]}</code>)\n📅 Banned: {ban_date}\n\n'
     await update.message.reply_text(msg, parse_mode="HTML")
 
@@ -612,7 +595,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         refer_list += f'  • <a href="tg://user?id={r["user_id"]}">{rname}</a>\n'
 
     msg = (
-        "👤 *User Details*\n"
+        "👤 <b>User Details</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📛 Name: <a href='tg://user?id={uid}'>{name}</a>\n"
         f"🔖 Username: {uname}\n"
@@ -628,7 +611,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔗 <a href='{ref_link}'>Refer Link</a>\n"
     )
     if refer_list:
-        msg += f"\n👥 *Referred Users:*\n{refer_list}"
+        msg += f"\n👥 <b>Referred Users:</b>\n{refer_list}"
     else:
         msg += "\n👥 Referred Users: None"
 
@@ -673,7 +656,7 @@ async def referlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No referrals found.")
         return
 
-    msg = "📋 *Full Refer List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "📋 <b>Full Refer List</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(all_users, 1):
         name = u.get("name") or f"User {u['user_id']}"
         msg += f'{i}. <a href="tg://user?id={u["user_id"]}">{name}</a> — {u["referrals"]} refers\n'
@@ -695,11 +678,11 @@ async def referstat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     medals = ["🥇", "🥈", "🥉"]
-    msg = "🏆 *Refer Leaderboard*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🏆 <b>Refer Leaderboard</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(top_users):
         medal = medals[i] if i < 3 else f"{i+1}."
         name  = u.get("name") or f"User {u['user_id']}"
-        msg  += f'{medal} <a href="tg://user?id={u["user_id"]}">{name}</a> — *{u["referrals"]}* refers\n'
+        msg  += f'{medal} <a href="tg://user?id={u["user_id"]}">{name}</a> — <b>{u["referrals"]}</b> refers\n'
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
     await update.message.reply_text(msg, parse_mode="HTML")
 
@@ -717,15 +700,14 @@ async def createvoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credits  = int(context.args[1])
     max_uses = int(context.args[2])
     if await vouchers.find_one({"code": code}):
-        await update.message.reply_text(f"❌ Voucher `{code}` already exists.", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Voucher <code>{code}</code> already exists.", parse_mode="HTML")
         return
     await vouchers.insert_one({"code": code, "credits": credits, "max_uses": max_uses, "uses": 0, "used_by": []})
     await log_admin_action(update.effective_user.id, "createvoucher", None, f"Created voucher {code} with {credits} credits, {max_uses} uses")
     await update.message.reply_text(
-        f"🎟️ *Voucher Created!*\n\n📌 Code: `{code}`\n💰 Credits: {credits}\n👥 Max Uses: {max_uses}",
-        parse_mode="Markdown"
+        f"🎟️ <b>Voucher Created!</b>\n\n📌 Code: <code>{code}</code>\n💰 Credits: {credits}\n👥 Max Uses: {max_uses}",
+        parse_mode="HTML"
     )
-
 
 async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -753,10 +735,9 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await vouchers.update_one({"code": code}, {"$inc": {"uses": 1}, "$push": {"used_by": user_id}})
     new_balance = await update_credits(user_id, voucher["credits"])
     await update.message.reply_text(
-        f"🎉 *Voucher Redeemed!*\n\n💰 Credits Added: *{voucher['credits']}*\n💳 New Balance: *{new_balance}* credits",
-        parse_mode="Markdown"
+        f"🎉 <b>Voucher Redeemed!</b>\n\n💰 Credits Added: <b>{voucher['credits']}</b>\n💳 New Balance: <b>{new_balance}</b> credits",
+        parse_mode="HTML"
     )
-
 
 async def deletevoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -769,10 +750,9 @@ async def deletevoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result.deleted_count:
         await log_admin_action(update.effective_user.id, "deletevoucher", None, f"Deleted voucher {code}")
     await update.message.reply_text(
-        f"✅ Voucher `{code}` deleted." if result.deleted_count else f"❌ Voucher `{code}` not found.",
-        parse_mode="Markdown"
+        f"✅ Voucher <code>{code}</code> deleted." if result.deleted_count else f"❌ Voucher <code>{code}</code> not found.",
+        parse_mode="HTML"
     )
-
 
 async def listvouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -781,10 +761,10 @@ async def listvouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not all_vouchers:
         await update.message.reply_text("No vouchers found.")
         return
-    msg = "🎟️ *All Vouchers*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🎟️ <b>All Vouchers</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for v in all_vouchers:
-        msg += f"`{v['code']}` — 💰 {v['credits']} credits — 👥 {v['uses']}/{v['max_uses']} used\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+        msg += f"<code>{v['code']}</code> — 💰 {v['credits']} credits — 👥 {v['uses']}/{v['max_uses']} used\n"
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               BUY CREDITS - UPI
@@ -798,12 +778,12 @@ async def buy_credits_menu(update, context):
         [InlineKeyboardButton("💰 Custom Amount", callback_data="buy_custom")],
     ]
     await update.message.reply_text(
-        "💳 *Buy Credits*\n\n"
+        "💳 <b>Buy Credits</b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "💵 *Select an option:*\n"
+        "💵 <b>Select an option:</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ *Bonus on higher packs!*",
-        parse_mode="Markdown",
+        "✨ <b>Bonus on higher packs!</b>",
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -828,17 +808,17 @@ async def process_payment(update, query, amount, credits):
     await query.message.reply_photo(
         photo=UPI_QR_LINK,
         caption=(
-            f"📱 *UPI Payment*\n\n"
+            f"📱 <b>UPI Payment</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💵 Amount: ₹{amount}\n"
             f"💰 Credits: {credits}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏦 UPI ID: `{UPI_ID}`\n\n"
-            f"_Scan QR or use UPI ID to pay_\n"
+            f"🏦 UPI ID: <code>{UPI_ID}</code>\n\n"
+            f"<i>Scan QR or use UPI ID to pay</i>\n"
             f"Then tap ✅ I've Paid below.\n\n"
-            f"🔖 Order ID: `{order_id}`"
+            f"🔖 Order ID: <code>{order_id}</code>"
         ),
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=keyboard
     )
 
@@ -866,30 +846,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buy_custom":
         context.user_data["upi_custom"] = True
         await query.message.edit_text(
-            "💰 *Custom Amount*\n\n"
+            "💰 <b>Custom Amount</b>\n\n"
             "Please enter the amount you want to pay (in ₹):\n"
-            f"_Minimum amount: ₹{MIN_CUSTOM_AMOUNT}_\n\n"
-            "Example: `50`",
-            parse_mode="Markdown",
+            f"<i>Minimum amount: ₹{MIN_CUSTOM_AMOUNT}</i>\n\n"
+            "Example: <code>50</code>",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_payment")]])
         )
         return
 
     # ── Credits menu inline buttons ──
     elif data == "credits_refer":
+        # Now show the same refer message as main menu "Refer" button (with withdraw)
         user = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
-        await query.message.reply_text(
-            "🔗 *Refer & Earn*\n"
+        msg = (
+            "🔗 <b>Refer & Earn</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "Share your link and earn credits\n"
-            "for every friend who joins!\n\n"
-            f"🔗 Your Link:\n`{ref_link}`\n\n"
-            f"💰 Reward: *{REFER_CREDITS} credits* per refer\n"
-            f"👥 Total Referrals: *{user['referrals']}*\n"
-            "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown"
+            f"🔗 Your Link:\n<code>{ref_link}</code>\n\n"
+            f"💰 Reward: <b>{REFER_CREDITS} credits</b> per refer\n"
+            f"👥 Total Referrals: <b>{user['referrals']}</b>\n"
+            f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
+            f"🏧 Minimum Withdraw: ₹{MIN_WITHDRAW}\n"
+            "━━━━━━━━━━━━━━━━━━━━"
         )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💸 Withdraw Commission", callback_data="withdraw_start")]
+        ])
+        await query.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
         await query.answer()
         return
 
@@ -909,11 +893,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["withdraw_step"] = "amount"
         await query.message.reply_text(
-            "💸 *Withdraw Commission*\n\n"
+            f"💸 <b>Withdraw Commission</b>\n\n"
             f"Your earned commission: ₹{user.get('earned_commission', 0)}\n"
             f"Minimum withdraw: ₹{MIN_WITHDRAW}\n\n"
             "Please enter the amount you want to withdraw (₹):",
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]])
         )
         await query.answer()
@@ -940,7 +924,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("waiting_for_number", None)
         context.user_data.pop("waiting_for_vehicle", None)
         try:
-            await query.message.edit_text("❌ *Search cancelled.*", parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text("❌ <b>Search cancelled.</b>", parse_mode="HTML", reply_markup=None)
         except Exception:
             pass
 
@@ -948,10 +932,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cancel_payment":
         context.user_data.pop("upi_custom", None)
         try:
-            await query.message.edit_text("❌ *Payment Cancelled*\n\nNo charges were made.", parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text("❌ <b>Payment Cancelled</b>\n\nNo charges were made.", parse_mode="HTML", reply_markup=None)
         except Exception:
             try:
-                await query.message.edit_caption("❌ *Payment Cancelled*\n\nNo charges were made.", parse_mode="Markdown", reply_markup=None)
+                await query.message.edit_caption("❌ <b>Payment Cancelled</b>\n\nNo charges were made.", parse_mode="HTML", reply_markup=None)
             except Exception:
                 pass
 
@@ -973,15 +957,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uname    = f"@{username}" if username else name or f"User {user_id}"
 
         payout_msg = (
-            "💳 *New Payment Order*\n"
+            "💳 <b>New Payment Order</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📛 Name: {name}\n"
             f"👤 Username: {uname}\n"
-            f"🆔 User ID: `{user_id}`\n"
+            f"🆔 User ID: <code>{user_id}</code>\n"
             f"💵 Amount: ₹{amount}\n"
             f"💰 Credits: {credits}\n"
             f"📊 Status: Pending ⏳\n\n"
-            f"🔖 Order ID: `{order_id}`"
+            f"🔖 Order ID: <code>{order_id}</code>"
         )
         payout_kb = InlineKeyboardMarkup([
             [
@@ -990,22 +974,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
         try:
-            await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, parse_mode="Markdown", reply_markup=payout_kb)
+            await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, parse_mode="HTML", reply_markup=payout_kb)
         except Exception as e:
             await query.answer(f"❌ Failed to send to payout channel: {str(e)}", show_alert=True)
             await orders.update_one({"order_id": order_id}, {"$set": {"submitted": False}})
             return
 
         success_text = (
-            "✅ *Payment Request Submitted!*\n\n"
+            "✅ <b>Payment Request Submitted!</b>\n\n"
+            f"Your order ID: <code>{order_id}</code>\n"
             "Your credits will be added after verification.\n"
-            "_Usually within a few minutes._"
+            "<i>Usually within a few minutes.</i>"
         )
         try:
-            await query.message.edit_caption(success_text, parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_caption(success_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             try:
-                await query.message.edit_text(success_text, parse_mode="Markdown", reply_markup=None)
+                await query.message.edit_text(success_text, parse_mode="HTML", reply_markup=None)
             except Exception:
                 await query.answer("✅ Payment submitted!", show_alert=True)
 
@@ -1017,7 +1002,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         credits  = int(parts[3])
         await update_credits(uid, credits)
         await orders.update_one({"order_id": order_id}, {"$set": {"status": "done"}})
-        # Give commission to referrer if exists
         order = await orders.find_one({"order_id": order_id})
         if order and order.get("type", "buy") == "buy":
             buyer = await get_user(uid)
@@ -1030,7 +1014,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await context.bot.send_message(
                             chat_id=ref_uid,
                             text=(
-                                f"🎉 *Commission Earned!*\n\n"
+                                f"🎉 <b>Commission Earned!</b>\n\n"
                                 f"Your referral <a href='tg://user?id={uid}'>{buyer.get('name', 'User')}</a> just purchased credits.\n"
                                 f"You earned ₹{commission} commission.\n"
                                 f"Total earned: ₹{ (await get_user(ref_uid))['earned_commission'] }"
@@ -1041,19 +1025,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         pass
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Done ✅")
         try:
-            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text(new_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             pass
         try:
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    "🎉 *Payment Approved!*\n\n"
-                    f"💰 *{credits} credits* have been added to your account.\n\n"
+                    "🎉 <b>Payment Approved!</b>\n\n"
+                    f"💰 <b>{credits} credits</b> have been added to your account.\n\n"
                     "Start searching now — happy hunting! 🔍\n"
-                    "_For any help, contact @DarkGalaxxyy_"
+                    "<i>For any help, contact @DarkGalaxxyy</i>"
                 ),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             pass
@@ -1068,7 +1052,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await users.update_one({"user_id": uid}, {"$inc": {"earned_commission": -amount, "withdrawn": amount}})
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Done ✅")
         try:
-            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text(new_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             pass
         order = await orders.find_one({"order_id": order_id})
@@ -1077,17 +1061,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    f"✅ *Withdrawal Successful!*\n\n"
+                    f"✅ <b>Withdrawal Successful!</b>\n\n"
                     f"Amount withdrawn: ₹{amount}\n"
-                    f"To UPI ID: `{upi_id}`\n\n"
+                    f"To UPI ID: <code>{upi_id}</code>\n\n"
                     "Thank you for using DeepTrace! 🙏"
                 ),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             pass
 
-    # ── Cancel Withdraw Order (Admin) ──
+    # ── Cancel Withdraw Order ──
     elif data.startswith("cancelwithdraworder_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1095,18 +1079,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await orders.update_one({"order_id": order_id}, {"$set": {"status": "cancelled"}})
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Cancelled ❌")
         try:
-            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text(new_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             pass
         try:
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    "❌ *Withdrawal Cancelled*\n\n"
+                    "❌ <b>Withdrawal Cancelled</b>\n\n"
                     "Your withdrawal request has been cancelled.\n"
                     "If this is a mistake, contact @DarkGalaxxyy"
                 ),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             pass
@@ -1119,18 +1103,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await orders.update_one({"order_id": order_id}, {"$set": {"status": "cancelled"}})
         new_text = query.message.text.replace("📊 Status: Pending ⏳", "📊 Status: Cancelled ❌")
         try:
-            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=None)
+            await query.message.edit_text(new_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             pass
         try:
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    "❌ *Payment Cancelled*\n\n"
+                    "❌ <b>Payment Cancelled</b>\n\n"
                     "Your payment order has been cancelled.\n"
                     "If this is a mistake, contact @DarkGalaxxyy"
                 ),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             pass
@@ -1145,22 +1129,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_credits  = sum([u["credits"] async for u in users.find({}, {"credits": 1})])
         total_vouchers = await vouchers.count_documents({})
         new_text = (
-            "📊 *Bot Statistics*\n"
+            "📊 <b>Bot Statistics</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"👤 Total Users: *{total_users}*\n"
-            f"✅ Joined Users: *{joined_users}*\n"
-            f"⏳ Only Started: *{only_start}*\n\n"
-            f"💰 Total Credits: *{total_credits}*\n"
-            f"🔧 Mode: `{MODE}`\n"
+            f"👤 Total Users: <b>{total_users}</b>\n"
+            f"✅ Joined Users: <b>{joined_users}</b>\n"
+            f"⏳ Only Started: <b>{only_start}</b>\n\n"
+            f"💰 Total Credits: <b>{total_credits}</b>\n"
+            f"🔧 Mode: <code>{MODE}</code>\n"
             f"♾️ Unlimited: {'ON ✅' if UNLIMITED_MODE else 'OFF ❌'}\n"
-            f"🎁 Start Credits: *{START_CREDITS}*\n"
-            f"🔗 Refer Credits: *{REFER_CREDITS}*\n"
-            f"🎟️ Vouchers: *{total_vouchers}*\n\n"
-            f"_Last refreshed: {datetime.now(IST).strftime('%H:%M:%S')}_"
+            f"🎁 Start Credits: <b>{START_CREDITS}</b>\n"
+            f"🔗 Refer Credits: <b>{REFER_CREDITS}</b>\n"
+            f"🎟️ Vouchers: <b>{total_vouchers}</b>\n\n"
+            f"<i>Last refreshed: {datetime.now(IST).strftime('%H:%M:%S')}</i>"
         )
         refresh_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]])
         try:
-            await query.message.edit_text(new_text, parse_mode="Markdown", reply_markup=refresh_kb)
+            await query.message.edit_text(new_text, parse_mode="HTML", reply_markup=refresh_kb)
         except Exception:
             pass
 
@@ -1215,19 +1199,19 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bank = context.user_data["withdraw_bank_name"]
             acc = context.user_data["withdraw_account_name"]
             msg = (
-                "💸 *Confirm Withdrawal*\n"
+                "💸 <b>Confirm Withdrawal</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"Amount: ₹{amount}\n"
                 f"Bank: {bank}\n"
                 f"Account Name: {acc}\n"
-                f"UPI ID: `{upi}`\n\n"
+                f"UPI ID: <code>{upi}</code>\n\n"
                 "Is this correct?"
             )
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Confirm", callback_data="confirm_withdraw"),
                  InlineKeyboardButton("❌ Cancel", callback_data="cancel_withdraw")]
             ])
-            await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+            await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
             context.user_data.pop("withdraw_step")
             return
         return
@@ -1256,17 +1240,17 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_photo(
                 photo=UPI_QR_LINK,
                 caption=(
-                    f"📱 *UPI Payment*\n\n"
+                    f"📱 <b>UPI Payment</b>\n\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"💵 Amount: ₹{amount}\n"
                     f"💰 Credits: {credits}\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"🏦 UPI ID: `{UPI_ID}`\n\n"
-                    f"_Scan QR or use UPI ID to pay_\n"
+                    f"🏦 UPI ID: <code>{UPI_ID}</code>\n\n"
+                    f"<i>Scan QR or use UPI ID to pay</i>\n"
                     f"Then tap ✅ I've Paid below.\n\n"
-                    f"🔖 Order ID: `{order_id}`"
+                    f"🔖 Order ID: <code>{order_id}</code>"
                 ),
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=keyboard
             )
         elif text.isdigit() and int(text) < MIN_CUSTOM_AMOUNT:
@@ -1277,7 +1261,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 "❌ Invalid amount. Enter a number (digits only):\n"
-                f"_Minimum ₹{MIN_CUSTOM_AMOUNT}_",
+                f"<i>Minimum ₹{MIN_CUSTOM_AMOUNT}</i>",
+                parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_payment")]])
             )
         return
@@ -1291,11 +1276,11 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_number"] = 1
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")]])
         await update.message.reply_text(
-            "🔍 *Number Search — API 1*\n\n"
+            "🔍 <b>Number Search — API 1</b>\n\n"
             "Please enter the number to search:\n\n"
-            "⚠️ *Without +91* — digits only\n"
-            "_Example: `9876543210`_",
-            parse_mode="Markdown",
+            "⚠️ <b>Without +91</b> — digits only\n"
+            "<i>Example: <code>9876543210</code></i>",
+            parse_mode="HTML",
             reply_markup=cancel_kb
         )
         return
@@ -1309,12 +1294,12 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_number"] = 2
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")]])
         await update.message.reply_text(
-            "🔎 *Search TG Number*\n\n"
+            "🔎 <b>Search TG Number</b>\n\n"
             "Please enter the User ID Or Target Username to search:\n\n"
-            "⚠️ *Without space* — User ID or Username\n"
-            "_Example: `6116093010`_\n"
-            "_Example: `@username`_",
-            parse_mode="Markdown",
+            "⚠️ <b>Without space</b> — User ID or Username\n"
+            "<i>Example: <code>6116093010</code></i>\n"
+            "<i>Example: <code>@username</code></i>",
+            parse_mode="HTML",
             reply_markup=cancel_kb
         )
         return
@@ -1328,10 +1313,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_vehicle"] = True
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")]])
         await update.message.reply_text(
-            "🚗 *Vehicle Search*\n\n"
+            "🚗 <b>Vehicle Search</b>\n\n"
             "Please enter the Vehicle Registration Number:\n\n"
-            "_Example: `UP78AB1234`_",
-            parse_mode="Markdown",
+            "<i>Example: <code>UP78AB1234</code></i>",
+            parse_mode="HTML",
             reply_markup=cancel_kb
         )
         return
@@ -1363,34 +1348,34 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── My Account ──
     if text == "👤 My Account":
         user = await get_user(user_id) or await create_user(user_id)
-        unlimited_note = "\n♾️ _Unlimited Mode ON — searches are free!_" if UNLIMITED_MODE else ""
+        unlimited_note = "\n♾️ <i>Unlimited Mode ON — searches are free!</i>" if UNLIMITED_MODE else ""
         await update.message.reply_text(
-            "👤 *My Account*\n"
+            "👤 <b>My Account</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🆔 User ID: `{user_id}`\n"
-            f"💰 Credits: *{user['credits']}*{unlimited_note}\n"
+            f"🆔 User ID: <code>{user_id}</code>\n"
+            f"💰 Credits: <b>{user['credits']}</b>{unlimited_note}\n"
             f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"📅 Joined: {user['joined']}\n"
             f"👥 Referrals: {user['referrals']}\n"
             "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
     # ── Credits with inline buttons ──
     if text == "💰 Credits":
         user = await get_user(user_id) or await create_user(user_id)
-        unlimited_note = "\n\n♾️ *Unlimited Mode is ON* — searches are FREE!" if UNLIMITED_MODE else ""
+        unlimited_note = "\n\n♾️ <i>Unlimited Mode is ON — searches are FREE!</i>" if UNLIMITED_MODE else ""
         credits_msg = (
-            "💰 *Credits*\n"
+            "💰 <b>Credits</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💳 *Your Balance:* `{user['credits']}` credits{unlimited_note}\n\n"
-            f"Each search costs *{DEDUCTION_CREDITS} credit(s)*.\n\n"
-            "📌 *How to earn credits:*\n\n"
-            f"🎁 New users → *{START_CREDITS}* free credits\n"
-            f"🔗 Refer a friend → *{REFER_CREDITS}* credits\n"
-            "🎟️ Redeem voucher → `/redeem <code>`\n"
-            "_(Vouchers are dropped in official channel @siee1234)_\n"
+            f"💳 <b>Your Balance:</b> <code>{user['credits']}</code> credits{unlimited_note}\n\n"
+            f"Each search costs <b>{DEDUCTION_CREDITS} credit(s)</b>.\n\n"
+            "📌 <b>How to earn credits:</b>\n\n"
+            f"🎁 New users → <b>{START_CREDITS}</b> free credits\n"
+            f"🔗 Refer a friend → <b>{REFER_CREDITS}</b> credits\n"
+            "🎟️ Redeem voucher → <code>/redeem &lt;code&gt;</code>\n"
+            "<i>(Vouchers are dropped in official channel @siee1234)</i>\n"
             "💳 Purchase → ₹1 = 1 credit\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
@@ -1398,7 +1383,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔗 Refer", callback_data="credits_refer"),
              InlineKeyboardButton("💳 Buy Credits", callback_data="credits_buy")]
         ])
-        await update.message.reply_text(credits_msg, parse_mode="Markdown", reply_markup=kb)
+        await update.message.reply_text(credits_msg, parse_mode="HTML", reply_markup=kb)
         return
 
     # ── Refer ──
@@ -1406,11 +1391,11 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user     = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
         msg = (
-            "🔗 *Refer & Earn*\n"
+            "🔗 <b>Refer & Earn</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔗 Your Link:\n`{ref_link}`\n\n"
-            f"💰 Reward: *{REFER_CREDITS} credits* per refer\n"
-            f"👥 Total Referrals: *{user['referrals']}*\n"
+            f"🔗 Your Link:\n<code>{ref_link}</code>\n\n"
+            f"💰 Reward: <b>{REFER_CREDITS} credits</b> per refer\n"
+            f"👥 Total Referrals: <b>{user['referrals']}</b>\n"
             f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"🏧 Minimum Withdraw: ₹{MIN_WITHDRAW}\n"
             "━━━━━━━━━━━━━━━━━━━━"
@@ -1418,7 +1403,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("💸 Withdraw Commission", callback_data="withdraw_start")]
         ])
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+        await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
         return
 
     # ── Buy Credits ──
@@ -1429,14 +1414,14 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Help ──
     if text == "❓ Help":
         await update.message.reply_text(
-            "❓ *Help & Support*\n"
+            "❓ <b>Help & Support</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "For any queries, issues or\n"
             "to purchase credits, contact:\n\n"
             "👤 @DarkGalaxxyy\n\n"
-            "_We typically respond within minutes._\n"
+            "<i>We typically respond within minutes.</i>\n"
             "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -1452,22 +1437,22 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user_id != ADMIN_ID:
             await update.message.reply_text(
-                "🛡️ *Admin Panel*\n"
+                "🛡️ <b>Admin Panel</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"👤 Total Users: *{total_users}*\n"
-                f"✅ Joined Users: *{joined_users}*\n"
-                f"⏳ Only Started: *{only_start}*\n\n"
-                "📌 *Your Commands:*\n\n"
-                "`/addcredits` `<uid> <amount>`\n"
-                "`/removecredits` `<uid> <amount>`\n"
-                "`/setcredits` `<uid> <amount>`\n"
-                "`/checkbalance` `<uid>`\n"
-                "`/ban` `<uid>`\n"
-                "`/unban` `<uid>`\n"
-                "`/banusers`\n"
-                "`/broadcast` `<msg>`\n"
+                f"👤 Total Users: <b>{total_users}</b>\n"
+                f"✅ Joined Users: <b>{joined_users}</b>\n"
+                f"⏳ Only Started: <b>{only_start}</b>\n\n"
+                "📌 <b>Your Commands:</b>\n\n"
+                "<code>/addcredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+                "<code>/removecredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+                "<code>/setcredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+                "<code>/checkbalance &lt;uid&gt;</code>\n"
+                "<code>/ban &lt;uid&gt;</code>\n"
+                "<code>/unban &lt;uid&gt;</code>\n"
+                "<code>/banusers</code>\n"
+                "<code>/broadcast &lt;msg&gt;</code>\n"
                 "━━━━━━━━━━━━━━━━━━━━",
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=refresh_kb
             )
             return
@@ -1476,49 +1461,49 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_vouchers = await vouchers.count_documents({})
         total_admins   = await admins.count_documents({})
         await update.message.reply_text(
-            "👑 *Owner Panel*\n"
+            "👑 <b>Owner Panel</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔧 Mode: `{MODE}`\n"
+            f"🔧 Mode: <code>{MODE}</code>\n"
             f"♾️ Unlimited: {'ON ✅' if UNLIMITED_MODE else 'OFF ❌'}\n\n"
-            f"👤 Total Users: *{total_users}*\n"
-            f"✅ Joined Users: *{joined_users}*\n"
-            f"⏳ Only Started: *{only_start}*\n\n"
-            f"💰 Total Credits: *{total_credits}*\n"
-            f"🎁 Start Credits: *{START_CREDITS}*\n"
-            f"🔗 Refer Credits: *{REFER_CREDITS}*\n"
-            f"💸 Search Cost: *{DEDUCTION_CREDITS}* credit(s)\n"
-            f"🎟️ Vouchers: *{total_vouchers}*\n"
-            f"🛡️ Admins: *{total_admins}*\n\n"
-            "📌 *All Commands:*\n\n"
-            "👑 *Owner Only:*\n"
-            "`/addadmin` `<uid>`\n"
-            "`/removeadmin` `<uid>`\n"
-            "`/adminlist`\n"
-            "`/checkadmin` `<uid>`\n"
-            "`/setmode` `dual|group|private|maintenance`\n"
-            "`/unlimited` `on|off`\n"
-            "`/setstartcredits` `<amount>`\n"
-            "`/setrefercredits` `<amount>`\n"
-            "`/setdeductioncredits` `<amount>`\n"
-            "`/createvoucher` `<code> <credits> <uses>`\n"
-            "`/deletevoucher` `<code>`\n"
-            "`/listvouchers`\n"
-            "`/check` `<uid>`\n"
-            "`/msg` `<uid> <message>`\n"
-            "`/referlist`\n"
-            "`/stats`\n"
-            "`/id` `<@username>`\n"
-            "`/orderid` `<order_id>`\n\n"
-            "🛡️ *Admin & Owner:*\n"
-            "`/addcredits` `<uid> <amount>`\n"
-            "`/removecredits` `<uid> <amount>`\n"
-            "`/setcredits` `<uid> <amount>`\n"
-            "`/checkbalance` `<uid>`\n"
-            "`/ban` `<uid>` · `/unban` `<uid>`\n"
-            "`/banusers`\n"
-            "`/broadcast` `<msg>`\n"
+            f"👤 Total Users: <b>{total_users}</b>\n"
+            f"✅ Joined Users: <b>{joined_users}</b>\n"
+            f"⏳ Only Started: <b>{only_start}</b>\n\n"
+            f"💰 Total Credits: <b>{total_credits}</b>\n"
+            f"🎁 Start Credits: <b>{START_CREDITS}</b>\n"
+            f"🔗 Refer Credits: <b>{REFER_CREDITS}</b>\n"
+            f"💸 Search Cost: <b>{DEDUCTION_CREDITS}</b> credit(s)\n"
+            f"🎟️ Vouchers: <b>{total_vouchers}</b>\n"
+            f"🛡️ Admins: <b>{total_admins}</b>\n\n"
+            "📌 <b>All Commands:</b>\n\n"
+            "👑 <b>Owner Only:</b>\n"
+            "<code>/addadmin &lt;uid&gt;</code>\n"
+            "<code>/removeadmin &lt;uid&gt;</code>\n"
+            "<code>/adminlist</code>\n"
+            "<code>/checkadmin &lt;uid&gt;</code>\n"
+            "<code>/setmode dual|group|private|maintenance</code>\n"
+            "<code>/unlimited on|off</code>\n"
+            "<code>/setstartcredits &lt;amount&gt;</code>\n"
+            "<code>/setrefercredits &lt;amount&gt;</code>\n"
+            "<code>/setdeductioncredits &lt;amount&gt;</code>\n"
+            "<code>/createvoucher &lt;code&gt; &lt;credits&gt; &lt;uses&gt;</code>\n"
+            "<code>/deletevoucher &lt;code&gt;</code>\n"
+            "<code>/listvouchers</code>\n"
+            "<code>/check &lt;uid&gt;</code>\n"
+            "<code>/msg &lt;uid&gt; &lt;message&gt;</code>\n"
+            "<code>/referlist</code>\n"
+            "<code>/stats</code>\n"
+            "<code>/id &lt;@username&gt;</code>\n"
+            "<code>/orderid &lt;order_id&gt;</code>\n\n"
+            "🛡️ <b>Admin & Owner:</b>\n"
+            "<code>/addcredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+            "<code>/removecredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+            "<code>/setcredits &lt;uid&gt; &lt;amount&gt;</code>\n"
+            "<code>/checkbalance &lt;uid&gt;</code>\n"
+            "<code>/ban &lt;uid&gt;</code> · <code>/unban &lt;uid&gt;</code>\n"
+            "<code>/banusers</code>\n"
+            "<code>/broadcast &lt;msg&gt;</code>\n"
             "━━━━━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=refresh_kb
         )
         return
@@ -1536,8 +1521,7 @@ async def setmode(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     MODE = context.args[0].lower()
     await log_admin_action(update.effective_user.id, "setmode", None, f"Mode set to {MODE}")
-    await update.message.reply_text(f"✅ Mode set to: `{MODE}`", parse_mode="Markdown")
-
+    await update.message.reply_text(f"✅ Mode set to: <code>{MODE}</code>", parse_mode="HTML")
 
 async def unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global UNLIMITED_MODE
@@ -1550,12 +1534,11 @@ async def unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if val == "on":
         UNLIMITED_MODE = True
         await log_admin_action(update.effective_user.id, "unlimited", None, "Unlimited mode ON")
-        await update.message.reply_text("♾️ *Unlimited Mode is now ON*\n\nAll users can search for free.", parse_mode="Markdown")
+        await update.message.reply_text("♾️ <b>Unlimited Mode is now ON</b>\n\nAll users can search for free.", parse_mode="HTML")
     elif val == "off":
         UNLIMITED_MODE = False
         await log_admin_action(update.effective_user.id, "unlimited", None, "Unlimited mode OFF")
-        await update.message.reply_text("✅ *Unlimited Mode is now OFF*\n\nCredits will be deducted normally.", parse_mode="Markdown")
-
+        await update.message.reply_text("✅ <b>Unlimited Mode is now OFF</b>\n\nCredits will be deducted normally.", parse_mode="HTML")
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -1573,8 +1556,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             failed += 1
     await log_admin_action(update.effective_user.id, "broadcast", None, f"Broadcast sent, success: {success}, failed: {failed}")
-    await update.message.reply_text(f"📢 *Broadcast Complete*\n\n✅ Sent: {success}\n❌ Failed: {failed}", parse_mode="Markdown")
-
+    await update.message.reply_text(f"📢 <b>Broadcast Complete</b>\n\n✅ Sent: {success}\n❌ Failed: {failed}", parse_mode="HTML")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1586,21 +1568,20 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_vouchers = await vouchers.count_documents({})
     refresh_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]])
     await update.message.reply_text(
-        "📊 *Bot Statistics*\n"
+        "📊 <b>Bot Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👤 Total Users: *{total_users}*\n"
-        f"✅ Joined Users: *{joined_users}*\n"
-        f"⏳ Only Started: *{only_start}*\n\n"
-        f"💰 Total Credits: *{total_credits}*\n"
-        f"🔧 Mode: `{MODE}`\n"
+        f"👤 Total Users: <b>{total_users}</b>\n"
+        f"✅ Joined Users: <b>{joined_users}</b>\n"
+        f"⏳ Only Started: <b>{only_start}</b>\n\n"
+        f"💰 Total Credits: <b>{total_credits}</b>\n"
+        f"🔧 Mode: <code>{MODE}</code>\n"
         f"♾️ Unlimited: {'ON ✅' if UNLIMITED_MODE else 'OFF ❌'}\n"
-        f"🎁 Start Credits: *{START_CREDITS}*\n"
-        f"🔗 Refer Credits: *{REFER_CREDITS}*\n"
-        f"🎟️ Vouchers: *{total_vouchers}*",
-        parse_mode="Markdown",
+        f"🎁 Start Credits: <b>{START_CREDITS}</b>\n"
+        f"🔗 Refer Credits: <b>{REFER_CREDITS}</b>\n"
+        f"🎟️ Vouchers: <b>{total_vouchers}</b>",
+        parse_mode="HTML",
         reply_markup=refresh_kb
     )
-
 
 async def addcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -1615,22 +1596,21 @@ async def addcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User not found.")
         return
     await log_admin_action(update.effective_user.id, "addcredits", uid, f"Added {amount} credits")
-    await update.message.reply_text(f"✅ Added *{amount}* credits to `{uid}`\n💰 New Balance: *{new_bal}*", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Added <b>{amount}</b> credits to <code>{uid}</code>\n💰 New Balance: <b>{new_bal}</b>", parse_mode="HTML")
     try:
         await context.bot.send_message(
             chat_id=uid,
             text=(
-                "🎉 *Credits Added!*\n\n"
-                f"💰 *{amount} credits* have been added to your account.\n"
-                f"💳 New Balance: *{new_bal}* credits\n\n"
+                "🎉 <b>Credits Added!</b>\n\n"
+                f"💰 <b>{amount} credits</b> have been added to your account.\n"
+                f"💳 New Balance: <b>{new_bal}</b> credits\n\n"
                 "Thank you for your support! 🙏\n"
-                "_Happy searching — @DarkGalaxxyy_"
+                "<i>Happy searching — @DarkGalaxxyy</i>"
             ),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     except Exception:
         pass
-
 
 async def removecredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -1645,8 +1625,7 @@ async def removecredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User not found.")
         return
     await log_admin_action(update.effective_user.id, "removecredits", uid, f"Removed {amount} credits")
-    await update.message.reply_text(f"✅ Removed *{amount}* credits from `{uid}`\n💰 New Balance: *{new_bal}*", parse_mode="Markdown")
-
+    await update.message.reply_text(f"✅ Removed <b>{amount}</b> credits from <code>{uid}</code>\n💰 New Balance: <b>{new_bal}</b>", parse_mode="HTML")
 
 async def setcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -1659,10 +1638,9 @@ async def setcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success = await set_credits(uid, amount)
     if success:
         await log_admin_action(update.effective_user.id, "setcredits", uid, f"Set credits to {amount}")
-        await update.message.reply_text(f"✅ Credits set to *{amount}* for `{uid}`", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Credits set to <b>{amount}</b> for <code>{uid}</code>", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ User not found.")
-
 
 async def checkbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update.effective_user.id):
@@ -1675,13 +1653,12 @@ async def checkbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User not found.")
         return
     await update.message.reply_text(
-        f"👤 User: `{context.args[0]}`\n"
-        f"💰 Credits: *{user['credits']}*\n"
+        f"👤 User: <code>{context.args[0]}</code>\n"
+        f"💰 Credits: <b>{user['credits']}</b>\n"
         f"📅 Joined: {user['joined']}\n"
         f"👥 Referrals: {user['referrals']}",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
-
 
 async def setstartcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global START_CREDITS
@@ -1692,8 +1669,7 @@ async def setstartcredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     START_CREDITS = int(context.args[0])
     await log_admin_action(update.effective_user.id, "setstartcredits", None, f"Start credits set to {START_CREDITS}")
-    await update.message.reply_text(f"✅ Start credits set to: *{START_CREDITS}*", parse_mode="Markdown")
-
+    await update.message.reply_text(f"✅ Start credits set to: <b>{START_CREDITS}</b>", parse_mode="HTML")
 
 async def setrefercredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global REFER_CREDITS
@@ -1704,8 +1680,7 @@ async def setrefercredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     REFER_CREDITS = int(context.args[0])
     await log_admin_action(update.effective_user.id, "setrefercredits", None, f"Refer credits set to {REFER_CREDITS}")
-    await update.message.reply_text(f"✅ Refer credits set to: *{REFER_CREDITS}*", parse_mode="Markdown")
-
+    await update.message.reply_text(f"✅ Refer credits set to: <b>{REFER_CREDITS}</b>", parse_mode="HTML")
 
 async def setdeductioncredits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global DEDUCTION_CREDITS
@@ -1713,16 +1688,15 @@ async def setdeductioncredits(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Owner only command.")
         return
     if not context.args or not context.args[0].isdigit() or int(context.args[0]) < 1:
-        await update.message.reply_text("📌 Usage: /setdeductioncredits <amount>\n_Example: /setdeductioncredits 2_", parse_mode="Markdown")
+        await update.message.reply_text("📌 Usage: /setdeductioncredits <amount>\n<i>Example: /setdeductioncredits 2</i>", parse_mode="HTML")
         return
     DEDUCTION_CREDITS = int(context.args[0])
     await log_admin_action(update.effective_user.id, "setdeductioncredits", None, f"Search cost set to {DEDUCTION_CREDITS}")
     await update.message.reply_text(
-        f"✅ *Search cost updated!*\n\nEach search now costs *{DEDUCTION_CREDITS} credit(s)*.",
-        parse_mode="Markdown"
+        f"✅ <b>Search cost updated!</b>\n\nEach search now costs <b>{DEDUCTION_CREDITS} credit(s)</b>.",
+        parse_mode="HTML"
     )
 
-# ── Order ID lookup (Owner only) ──
 async def orderid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1735,10 +1709,10 @@ async def orderid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Order not found.")
         return
     msg = (
-        f"📦 *Order Details*\n"
+        f"📦 <b>Order Details</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🔖 Order ID: `{order['order_id']}`\n"
-        f"👤 User ID: `{order['user_id']}`\n"
+        f"🔖 Order ID: <code>{order['order_id']}</code>\n"
+        f"👤 User ID: <code>{order['user_id']}</code>\n"
         f"💵 Amount: ₹{order['amount']}\n"
         f"📊 Status: {order['status']}\n"
         f"📅 Created: {order['created']}\n"
@@ -1747,11 +1721,11 @@ async def orderid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += (
             f"🏦 Bank: {order.get('bank_name', 'N/A')}\n"
             f"📛 Account: {order.get('account_name', 'N/A')}\n"
-            f"📱 UPI: `{order.get('upi_id', 'N/A')}`\n"
+            f"📱 UPI: <code>{order.get('upi_id', 'N/A')}</code>\n"
         )
     else:
         msg += f"💰 Credits: {order.get('credits', 'N/A')}\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               OWNER ADMIN MANAGEMENT
@@ -1771,7 +1745,7 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     existing = await admins.find_one({"user_id": uid})
     if existing:
-        await update.message.reply_text(f"⚠️ User `{uid}` is already an admin.", parse_mode="Markdown")
+        await update.message.reply_text(f"⚠️ User <code>{uid}</code> is already an admin.", parse_mode="HTML")
         return
     uname = f"@{user['username']}" if user.get("username") else user.get("name") or str(uid)
     await admins.insert_one({
@@ -1781,12 +1755,11 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "added": datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     })
     await log_admin_action(ADMIN_ID, "addadmin", uid, f"Added admin {uid}")
-    await update.message.reply_text(f"✅ *{uname}* (`{uid}`) has been added as admin.", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ <b>{uname}</b> (<code>{uid}</code>) has been added as admin.", parse_mode="HTML")
     try:
-        await context.bot.send_message(chat_id=uid, text="🛡️ *You have been granted Admin access.*\n\nYou can now use admin commands.", parse_mode="Markdown")
+        await context.bot.send_message(chat_id=uid, text="🛡️ <b>You have been granted Admin access.</b>\n\nYou can now use admin commands.", parse_mode="HTML")
     except Exception:
         pass
-
 
 async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1799,7 +1772,7 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await admins.delete_one({"user_id": uid})
     if result.deleted_count:
         await log_admin_action(ADMIN_ID, "removeadmin", uid, f"Removed admin {uid}")
-        await update.message.reply_text(f"✅ User `{uid}` removed from admins.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ User <code>{uid}</code> removed from admins.", parse_mode="HTML")
         try:
             await context.bot.send_message(chat_id=uid, text="⚠️ Your admin access has been revoked.")
         except Exception:
@@ -1807,13 +1780,12 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ User is not an admin.")
 
-
 async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Owner only command.")
         return
     all_admins = await admins.find({}).to_list(length=100)
-    msg = "🛡️ *Admin List*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🛡️ <b>Admin List</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"👑 Owner: <a href='tg://user?id={ADMIN_ID}'>Owner</a>\n\n"
     if not all_admins:
         msg += "_No additional admins._"
@@ -1823,7 +1795,6 @@ async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f'{i}. <a href="tg://user?id={a["user_id"]}">{aname}</a> — Added: {a.get("added", "N/A")}\n'
     msg += "\n━━━━━━━━━━━━━━━━━━━━"
     await update.message.reply_text(msg, parse_mode="HTML")
-
 
 async def checkadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1836,17 +1807,17 @@ async def checkadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logs = await adminlogs.find({"admin_id": uid}).sort("time", -1).limit(50).to_list(length=50)
     admin_record = await admins.find_one({"user_id": uid})
     is_adm = "Yes ✅" if admin_record or uid == ADMIN_ID else "No ❌"
-    msg = f"🛡️ *Admin Check: `{uid}`*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = f"🛡️ <b>Admin Check: <code>{uid}</code></b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"Admin Status: {is_adm}\n\n"
     if logs:
-        msg += "*Recent Actions (max 50):*\n"
+        msg += "<b>Recent Actions (max 50):</b>\n"
         for log in logs:
-            tgt = f" → `{log['target']}`" if log.get("target") else ""
+            tgt = f" → <code>{log['target']}</code>" if log.get("target") else ""
             details = f" ({log['details']})" if log.get("details") else ""
-            msg += f"• `{log['action']}`{tgt}{details} — {log['time']}\n"
+            msg += f"• <code>{log['action']}</code>{tgt}{details} — {log['time']}\n"
     else:
         msg += "_No actions logged._"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # ══════════════════════════════════════════════
 #               CONFIRM WITHDRAW CALLBACK
@@ -1878,24 +1849,24 @@ async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAUL
     user = await get_user(user_id)
     uname = f"@{user['username']}" if user.get("username") else user.get("name") or f"User {user_id}"
     payout_msg = (
-        "🏧 *New Withdrawal Request*\n"
+        "🏧 <b>New Withdrawal Request</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📛 Name: {user.get('name', 'N/A')}\n"
         f"👤 Username: {uname}\n"
-        f"🆔 User ID: `{user_id}`\n"
+        f"🆔 User ID: <code>{user_id}</code>\n"
         f"💵 Amount: ₹{amount}\n"
         f"🏦 Bank: {bank}\n"
         f"📛 Account: {acc}\n"
-        f"📱 UPI: `{upi}`\n"
+        f"📱 UPI: <code>{upi}</code>\n"
         f"📊 Status: Pending ⏳\n\n"
-        f"🔖 Order ID: `{order_id}`"
+        f"🔖 Order ID: <code>{order_id}</code>"
     )
     payout_kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Mark as Done", callback_data=f"withdrawdone_{order_id}_{user_id}_{amount}"),
          InlineKeyboardButton("❌ Cancel Order", callback_data=f"cancelwithdraworder_{order_id}_{user_id}")]
     ])
     try:
-        await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, parse_mode="Markdown", reply_markup=payout_kb)
+        await context.bot.send_message(chat_id=PAYOUT_CHANNEL, text=payout_msg, parse_mode="HTML", reply_markup=payout_kb)
     except Exception as e:
         await query.message.edit_text(f"❌ Failed to submit. Contact support. Error: {e}")
         return
