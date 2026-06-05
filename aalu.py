@@ -163,6 +163,8 @@ async def check_membership(bot, user_id, chat):
         return True
 
 async def force_join_check(bot, user_id):
+    if user_id == ADMIN_ID:
+        return True
     in_channel = await check_membership(bot, user_id, f"@{FORCE_CHANNEL_USERNAME}")
     in_group2  = await check_membership(bot, user_id, FORCE_GROUP2_ID)
     return in_channel and in_group2
