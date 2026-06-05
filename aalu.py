@@ -841,7 +841,7 @@ async def buy_credits_menu(update, context):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "💵 <b>Select an option:</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ <b>Bonus on higher packs!</b>\n\n",
+        "✨ <b>Bonus on higher packs!</b>\n\n"
         "🚫 <b>Credits are non-refundable</b>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -1416,7 +1416,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"📅 Joined: {user['joined']}\n"
             f"👥 Referrals: {user['referrals']}\n\n"
-            f"🚫 <b>Credits are non-refundable</b>",
+            f"🚫 <b>Credits are non-refundable</b>"
             "━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML"
         )
@@ -1437,6 +1437,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎟️ Redeem voucher → <code>/redeem &lt;code&gt;</code>\n"
             "<i>(Vouchers are dropped in official channel @siee1234)</i>\n"
             "💳 Purchase → ₹1 = 1 credit\n"
+            "🚫 <b>Credits are non-refundable</b>"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         kb = InlineKeyboardMarkup([
