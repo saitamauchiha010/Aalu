@@ -841,7 +841,8 @@ async def buy_credits_menu(update, context):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "💵 <b>Select an option:</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ <b>Bonus on higher packs!</b>",
+        "✨ <b>Bonus on higher packs!</b>\n\n",
+        "🚫 <b>Credits are non-refundable</b>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -1414,7 +1415,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Credits: <b>{user['credits']}</b>{unlimited_note}\n"
             f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"📅 Joined: {user['joined']}\n"
-            f"👥 Referrals: {user['referrals']}\n"
+            f"👥 Referrals: {user['referrals']}\n\n"
+            f"🚫 <b>Credits are non-refundable</b>",
             "━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML"
         )
