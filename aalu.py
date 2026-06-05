@@ -1416,7 +1416,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💸 Earned Commission: ₹{user.get('earned_commission', 0)}\n"
             f"📅 Joined: {user['joined']}\n"
             f"👥 Referrals: {user['referrals']}\n\n"
-            f"🚫 <b>Credits are non-refundable</b>"
+            f"🚫 <b>Credits are non-refundable</b>\n"
             "━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML"
         )
@@ -1437,7 +1437,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎟️ Redeem voucher → <code>/redeem &lt;code&gt;</code>\n"
             "<i>(Vouchers are dropped in official channel @siee1234)</i>\n"
             "💳 Purchase → ₹1 = 1 credit\n"
-            "🚫 <b>Credits are non-refundable</b>"
+            "🚫 <b>Credits are non-refundable</b>\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
         kb = InlineKeyboardMarkup([
