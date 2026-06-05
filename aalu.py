@@ -3,6 +3,7 @@ import json
 import random
 import string
 import certifi
+from io import BytesIO
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -333,24 +334,38 @@ async def process_number(update, context, number, api_num=1):
         deduct_credits = True
         try:
             data = json.loads(result)
+
+            # --- API 2 error handling (no credits deducted) ---
             if api_num == 2:
-                # Check for non-deductable errors
+                if data.get("status") == False and "Daily limit exceeded" in data.get("error", ""):
+                    await update.message.reply_text(
+                        "❌ <b>TG API Limit Reached</b>\n\nDaily limit exceeded. Please try again later.\n<i>No credits deducted.</i>",
+                        parse_mode="HTML"
+                    )
+                    return
                 if data.get("success") == False:
                     msg_text = data.get("msg", "")
                     if "Phone number not found" in msg_text or "not found" in msg_text.lower():
                         await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
                         return
-                # Also handle result.error for wait or not found
                 r = data.get("result", {})
                 if r.get("status") == False:
                     err = r.get("error", "") or r.get("msg", "")
                     if "not found" in err.lower() or "wait" in err.lower():
                         await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
                         return
-            if api_num == 1 and (not data.get("success", True) or "No Record" in str(data)):
-                await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
-                return
 
+            # --- API 1 specific: new response format ---
+            if api_num == 1:
+                if not data.get("success") or not data.get("result"):
+                    await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
+                    return
+
+            # === Replace tag if present ===
+            if "tag" in data:
+                data["tag"] = "@DarkGalaxxyy"
+
+            # === Deduct credits (unless unlimited) ===
             if deduct_credits:
                 if UNLIMITED_MODE:
                     credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
@@ -358,20 +373,47 @@ async def process_number(update, context, number, api_num=1):
                     new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
                     credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
-                if "Api_BY" in data:
-                    data["Api_BY"] = CUSTOM_NAME
-                pretty = json.dumps(data, indent=2, ensure_ascii=False)
-                await update.message.reply_text(f"<pre>{pretty}</pre>\n\n{credit_note}", parse_mode="HTML")
+            # === Prepare file and summary ===
+            pretty = json.dumps(data, indent=2, ensure_ascii=False)
+            # Summary text (short info + credit note)
+            if api_num == 1:
+                total = data.get("total_records", len(data.get("result", [])))
+                summary = f"📞 <b>Number Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔢 Number: <code>{number}</code>\n📊 Records found: <b>{total}</b>\n\n{credit_note}"
+            else:
+                summary = f"🔎 <b>TG Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n{credit_note}"
+
+            # Send as .txt file
+            file_name = f"{number}.txt"
+            file_bytes = BytesIO(pretty.encode("utf-8"))
+            file_bytes.name = file_name
+
+            await bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=file_bytes,
+                caption=summary,
+                parse_mode="HTML"
+            )
+
         except json.JSONDecodeError:
+            # If response is not JSON, still send as file
             if deduct_credits:
                 if not UNLIMITED_MODE:
                     new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
                     credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
                 else:
                     credit_note = "♾️ <i>Unlimited Mode ON</i>"
-                await update.message.reply_text(f"{result}\n\n{credit_note}", parse_mode="HTML")
             else:
-                await update.message.reply_text(f"{result}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
+                credit_note = "<i>No credits deducted.</i>"
+
+            file_name = f"{number}.txt"
+            file_bytes = BytesIO(result.encode("utf-8"))
+            file_bytes.name = file_name
+            await bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=file_bytes,
+                caption=f"📄 <b>Raw Response</b>\n\n{credit_note}",
+                parse_mode="HTML"
+            )
 
     except requests.exceptions.Timeout:
         await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nPlease try again.", parse_mode="HTML")
@@ -458,8 +500,23 @@ async def process_vehicle(update, context, rc_number):
             new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
             credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
+        # Replace tag if present
+        if "tag" in data:
+            data["tag"] = "@DarkGalaxxyy"
+
         pretty = json.dumps(data, indent=2, ensure_ascii=False)
-        await update.message.reply_text(f"<pre>{pretty}</pre>\n\n{credit_note}", parse_mode="HTML")
+        summary = f"🚗 <b>Vehicle Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔖 Reg No: <code>{rc_number}</code>\n\n{credit_note}"
+
+        file_name = f"{rc_number}.txt"
+        file_bytes = BytesIO(pretty.encode("utf-8"))
+        file_bytes.name = file_name
+
+        await bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=file_bytes,
+            caption=summary,
+            parse_mode="HTML"
+        )
 
     except requests.exceptions.Timeout:
         await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nPlease try again.", parse_mode="HTML")
@@ -857,7 +914,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Credits menu inline buttons ──
     elif data == "credits_refer":
-        # Now show the same refer message as main menu "Refer" button (with withdraw)
         user = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
         msg = (
