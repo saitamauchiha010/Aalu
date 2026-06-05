@@ -39,7 +39,7 @@ FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
 FORCE_GROUP1_LINK      = "https://t.me/+QmnlbCK1x045MzZl"
 FORCE_GROUP2_ID        = -1003416250413
-FORCE_GROUP2_LINK      = "https://t.me/+cePuY51FkgE5MzY1"
+FORCE_GROUP2_LINK      = "https://t.me/+2enTDnbqVScxMDY1"
 
 # Payment preset amounts (credit: amount)
 PRESET_PAYMENTS = {
