@@ -14,7 +14,7 @@ from telegram.error import BadRequest
 #               CONFIGURATION
 # ══════════════════════════════════════════════
 
-API_URL        = "https://mynkapi.amit1100941.workers.dev/?key=mynkpapa&term={}"
+API_URL        = "http://num.zvx.workers.dev/?key=BsdK&mobile={}"
 API_URL2       = "https://telegram-to-num-gray.vercel/sms?key=Demo&term={}"
 VEHICLE_API    = "https://magical-knives-drum-condo.trycloudflare.com/vehicle-info?vno={}"
 BOT_TOKEN      = "8745436475:AAHv54C1skYqeWiGN2Ekk-uSEzxV2JGSGfo"
