@@ -32,8 +32,8 @@ DEDUCTION_CREDITS  = 1
 MODE               = "dual"
 UNLIMITED_MODE     = False
 
-REFERRAL_COMMISSION_PERCENT = 15  # % of purchase amount given as commission
-MIN_WITHDRAW = 15  # minimum ₹ to withdraw
+REFERRAL_COMMISSION_PERCENT = 15
+MIN_WITHDRAW = 15
 
 FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
@@ -41,15 +41,13 @@ FORCE_GROUP1_LINK      = "https://t.me/+QmnlbCK1x045MzZl"
 FORCE_GROUP2_ID        = -1003416250413
 FORCE_GROUP2_LINK      = "https://t.me/+2enTDnbqVScxMDY1"
 
-# Payment preset amounts (credit: amount)
 PRESET_PAYMENTS = {
-    "10": 10,    # ₹10 → 10 credits
-    "25": 30,    # ₹25 → 30 credits
-    "50": 65,    # ₹50 → 65 credits
+    "10": 10,
+    "25": 30,
+    "50": 65,
 }
 MIN_CUSTOM_AMOUNT = 5
 
-# Indian timezone (UTC+5:30)
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # ══════════════════════════════════════════════
@@ -323,12 +321,13 @@ async def process_number(update, context, number, api_num=1):
             url = API_URL.format(number)
             if not url.startswith("http"):
                 url = "https://" + url
+            # API 1 gets a longer timeout (60s) since it may take up to a minute
+            timeout_val = 60
         else:
             url = API_URL2.format(number)
+            timeout_val = 10
 
-        # API 1 gets a longer timeout (120s) so big responses can finish
-timeout_val = 180 if api_num == 1 else 120
-response = requests.get(url, timeout=timeout_val)
+        response = requests.get(url, timeout=timeout_val)
         result   = response.text.strip()
 
         if not result:
@@ -359,11 +358,18 @@ response = requests.get(url, timeout=timeout_val)
                         await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
                         return
 
-            # --- API 1 specific: new response format ---
+            # --- API 1 specific handling ---
             if api_num == 1:
-                if not data.get("success") or not data.get("result"):
+                if not data.get("success"):
                     await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
                     return
+                # Replace the credit field with our branding
+                data["credit"] = {
+                    "name": "Dark Galaxy",
+                    "developer": "@DarkGalaxxyy",
+                    "contact": "@DarkGalaxxyy",
+                    "footer": "Powered by @Siee1234"
+                }
 
             # === Replace tag if present ===
             if "tag" in data:
@@ -379,14 +385,12 @@ response = requests.get(url, timeout=timeout_val)
 
             # === Prepare file and summary ===
             pretty = json.dumps(data, indent=2, ensure_ascii=False)
-            # Summary text (short info + credit note)
             if api_num == 1:
-                total = data.get("total_records", len(data.get("result", [])))
+                total = data.get("total_results", len(data.get("results", [])))
                 summary = f"📞 <b>Number Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔢 Number: <code>{number}</code>\n📊 Records found: <b>{total}</b>\n\n{credit_note}"
             else:
                 summary = f"🔎 <b>TG Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n{credit_note}"
 
-            # Send as .txt file
             file_name = f"{number}.txt"
             file_bytes = BytesIO(pretty.encode("utf-8"))
             file_bytes.name = file_name
@@ -399,7 +403,6 @@ response = requests.get(url, timeout=timeout_val)
             )
 
         except json.JSONDecodeError:
-            # If response is not JSON, still send as file
             if deduct_credits:
                 if not UNLIMITED_MODE:
                     new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
@@ -504,7 +507,6 @@ async def process_vehicle(update, context, rc_number):
             new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
             credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
-        # Replace tag if present
         if "tag" in data:
             data["tag"] = "@DarkGalaxxyy"
 
@@ -894,7 +896,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     await query.answer()
 
-    # ── Buy Preset or Custom ──
     if data.startswith("buy_preset_"):
         preset_key = data.split("_")[2]
         if preset_key not in PRESET_PAYMENTS:
@@ -917,7 +918,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Credits menu inline buttons ──
     elif data == "credits_refer":
         user = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
@@ -943,7 +943,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
-    # ── Withdraw callbacks ──
     elif data == "withdraw_start":
         user = await get_user(user_id)
         if not user:
@@ -974,13 +973,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
-    # ── Back to buy menu from payment screen ──
     elif data == "buy_menu_back":
         await query.message.delete()
         await buy_credits_menu(query, context)
         return
 
-    # ── Cancel Search ──
     elif data == "cancel_search":
         context.user_data.pop("waiting_for_number", None)
         context.user_data.pop("waiting_for_vehicle", None)
@@ -989,7 +986,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Cancel Payment ──
     elif data == "cancel_payment":
         context.user_data.pop("upi_custom", None)
         try:
@@ -1000,7 +996,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-    # ── I've Paid ──
     elif data.startswith("paid_"):
         order_id = data.split("_", 1)[1]
         order    = await orders.find_one({"order_id": order_id})
@@ -1055,7 +1050,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 await query.answer("✅ Payment submitted!", show_alert=True)
 
-    # ── Mark as Done (Buy) ──
     elif data.startswith("done_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1103,7 +1097,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Mark Withdraw as Done ──
     elif data.startswith("withdrawdone_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1132,7 +1125,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Cancel Withdraw Order ──
     elif data.startswith("cancelwithdraworder_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1156,7 +1148,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Cancel Order (Buy) ──
     elif data.startswith("cancelorder_"):
         parts    = data.split("_")
         order_id = parts[1]
@@ -1180,7 +1171,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # ── Refresh Stats ──
     elif data == "refresh_stats":
         if user_id != ADMIN_ID:
             return
@@ -1218,7 +1208,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bot     = context.bot
 
-    # ── Withdrawal flow steps ──
     if context.user_data.get("withdraw_step"):
         step = context.user_data["withdraw_step"]
         if step == "amount":
@@ -1277,7 +1266,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         return
 
-    # ── Custom Amount Input ──
     if context.user_data.get("upi_custom"):
         if text.isdigit() and int(text) >= MIN_CUSTOM_AMOUNT:
             amount = int(text)
@@ -1328,7 +1316,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ── Search Number (API 1) ──
     if text == "🔍 Search Number":
         joined = await force_join_check(bot, user_id)
         if not joined:
@@ -1346,7 +1333,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Search TG Number (TG API) ──
     if text == "🔎 Search TG Number":
         joined = await force_join_check(bot, user_id)
         if not joined:
@@ -1365,7 +1351,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Vehicle Search ──
     if text == "🚗 Vehicle Search":
         joined = await force_join_check(bot, user_id)
         if not joined:
@@ -1406,7 +1391,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Invalid input.")
         return
 
-    # ── My Account ──
     if text == "👤 My Account":
         user = await get_user(user_id) or await create_user(user_id)
         unlimited_note = "\n♾️ <i>Unlimited Mode ON — searches are free!</i>" if UNLIMITED_MODE else ""
@@ -1424,7 +1408,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Credits with inline buttons ──
     if text == "💰 Credits":
         user = await get_user(user_id) or await create_user(user_id)
         unlimited_note = "\n\n♾️ <i>Unlimited Mode is ON — searches are FREE!</i>" if UNLIMITED_MODE else ""
@@ -1449,7 +1432,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(credits_msg, parse_mode="HTML", reply_markup=kb)
         return
 
-    # ── Refer ──
     if text == "🔗 Refer":
         user     = await get_user(user_id) or await create_user(user_id)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user['ref_code']}"
@@ -1469,12 +1451,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
         return
 
-    # ── Buy Credits ──
     if text == "💳 Buy Credits":
         await buy_credits_menu(update, context)
         return
 
-    # ── Help ──
     if text == "❓ Help":
         await update.message.reply_text(
             "❓ <b>Help & Support</b>\n"
@@ -1488,7 +1468,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Admin Panel ──
     if text == "⚙️ Admin Panel":
         if not await is_admin(user_id):
             await update.message.reply_text("❌ Access Denied.")
