@@ -327,7 +327,7 @@ async def process_number(update, context, number, api_num=1):
             url = API_URL2.format(number)
 
         # API 1 gets a longer timeout (120s) so big responses can finish
-timeout_val = 120 if api_num == 1 else 10
+timeout_val = 180 if api_num == 1 else 120
 response = requests.get(url, timeout=timeout_val)
         result   = response.text.strip()
 
