@@ -3,6 +3,7 @@ import json
 import random
 import string
 import certifi
+import asyncio
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -175,6 +176,34 @@ def join_keyboard():
     ])
 
 # ══════════════════════════════════════════════
+#               SECURITY — WEBHOOK HIJACK PROTECTION
+# ══════════════════════════════════════════════
+
+async def post_init(app):
+    """Runs once when the bot starts. Kills any rogue webhook."""
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        print("[SECURITY] Webhook cleared, pending updates dropped.")
+    except Exception as e:
+        print(f"[SECURITY] post_init error: {e}")
+
+    # Start the watchdog background task
+    asyncio.create_task(webhook_watchdog(app))
+
+
+async def webhook_watchdog(app):
+    """Every 30 seconds, verify no webhook is set. If it is — kill it."""
+    while True:
+        try:
+            info = await app.bot.get_webhook_info()
+            if info.url:  # someone set a webhook
+                print(f"[SECURITY] Rogue webhook detected: {info.url} — deleting")
+                await app.bot.delete_webhook(drop_pending_updates=True)
+        except Exception as e:
+            print(f"[SECURITY] watchdog error: {e}")
+        await asyncio.sleep(30)
+
+# ══════════════════════════════════════════════
 #               START
 # ══════════════════════════════════════════════
 
@@ -316,12 +345,19 @@ async def process_number(update, context, number, api_num=1):
         await update.message.reply_text(zero_msg, parse_mode="HTML", reply_markup=insufficient_credits_kb())
         return
 
+    # ── Inform the user that the search has started (API 1 only) ──
+    if api_num == 1:
+        await update.message.reply_text(
+            f"🔍 <b>Searching for the number</b> <code>{number}</code>...\n"
+            "⏳ <i>Please wait, this may take up to a minute.</i>",
+            parse_mode="HTML"
+        )
+
     try:
         if api_num == 1:
             url = API_URL.format(number)
             if not url.startswith("http"):
                 url = "https://" + url
-            # API 1 gets a longer timeout (60s) since it may take up to a minute
             timeout_val = 60
         else:
             url = API_URL2.format(number)
@@ -363,7 +399,6 @@ async def process_number(update, context, number, api_num=1):
                 if not data.get("success"):
                     await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
                     return
-                # Replace the credit field with our branding
                 data["credit"] = {
                     "name": "Dark Galaxy",
                     "developer": "@DarkGalaxxyy",
@@ -1921,7 +1956,7 @@ async def confirm_withdraw_callback(update: Update, context: ContextTypes.DEFAUL
 # ══════════════════════════════════════════════
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start",                start))
     app.add_handler(CommandHandler("num",                  num))
     app.add_handler(CommandHandler("tgnum",                tgnum))
