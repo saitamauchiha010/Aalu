@@ -18,7 +18,7 @@ from telegram.error import BadRequest
 API_URL        = "https://num-to-info.asurpapa.workers.dev/api?key=OSINTBOT&number={}"
 API_URL2       = "https://telegram-to-num-gray.vercel/sms?key=Demo&term={}"
 VEHICLE_API    = "https://magical-knives-drum-condo.trycloudflare.com/vehicle-info?vno={}"
-BOT_TOKEN      = "8745436475:AAHv54C1skYqeWiGN2Ekk-uSEzxV2JGSGfo"
+BOT_TOKEN      = "8745436475:AAE5FW3TTqeZCPVroJTCIy2W4e3eQVHOAaQ"
 BOT_USERNAME   = "DeepTraceRobot"
 CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
 ADMIN_ID       = 6131370190
