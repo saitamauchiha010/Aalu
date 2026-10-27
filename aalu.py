@@ -38,9 +38,9 @@ MIN_WITHDRAW = 15
 
 FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
-FORCE_GROUP1_LINK      = "https://t.me/+QmnlbCK1x045MzZl"
-FORCE_GROUP2_ID        = --1003909989175
-FORCE_GROUP2_LINK      = "https://t.me/+2enTDnbqVScxMDY1"
+FORCE_GROUP1_LINK      = "https://t.me/+koTD7TYkHxRhNzY1"
+FORCE_GROUP2_ID        = -1003909989175
+FORCE_GROUP2_LINK      = "https://t.me/+37LAxYJO4rMxOGY1"
 
 PRESET_PAYMENTS = {
     "10": 10,
