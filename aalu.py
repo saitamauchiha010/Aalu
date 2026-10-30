@@ -20,7 +20,7 @@ API_URL2       = "https://telegram-to-num-gray.vercel/sms?key=Demo&term={}"
 VEHICLE_API    = "https://magical-knives-drum-condo.trycloudflare.com/vehicle-info?vno={}"
 BOT_TOKEN      = "8745436475:AAE5FW3TTqeZCPVroJTCIy2W4e3eQVHOAaQ"
 BOT_USERNAME   = "DeepTraceRobot"
-CUSTOM_NAME    = "@ROLEX_SIR009 & @Darkdon01 & @DarkGalaxxyy & @R4HULxTRUSTED"
+CUSTOM_NAME    = "@DarkGalaxxyy & @R4HULxTRUSTED"
 ADMIN_ID       = 6131370190
 MONGO_URI      = "mongodb+srv://saitamauchiha01025_db_user:yMvHQKjjRpFsgDxz@cluster0.fomymln.mongodb.net/?appName=Cluster0"
 UPI_ID         = "DarkGalaxxyy@naviaxis"
@@ -38,9 +38,9 @@ MIN_WITHDRAW = 15
 
 FORCE_CHANNEL_USERNAME = "siee1234"
 FORCE_CHANNEL_LINK     = "https://t.me/siee1234"
-FORCE_GROUP1_LINK      = "https://t.me/+koTD7TYkHxRhNzY1"
-FORCE_GROUP2_ID        = -1003909989175
-FORCE_GROUP2_LINK      = "https://t.me/+37LAxYJO4rMxOGY1"
+FORCE_GROUP1_LINK      = "https://t.me/+37LAxYJO4rMxOGY1"
+FORCE_GROUP2_ID        = -1003830965397
+FORCE_GROUP2_LINK      = "https://t.me/+koTD7TYkHxRhNzY1"
 
 PRESET_PAYMENTS = {
     "10": 10,
