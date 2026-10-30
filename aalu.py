@@ -187,7 +187,6 @@ async def post_init(app):
     except Exception as e:
         print(f"[SECURITY] post_init error: {e}")
 
-    # Start the watchdog background task
     asyncio.create_task(webhook_watchdog(app))
 
 
@@ -196,12 +195,115 @@ async def webhook_watchdog(app):
     while True:
         try:
             info = await app.bot.get_webhook_info()
-            if info.url:  # someone set a webhook
+            if info.url:
                 print(f"[SECURITY] Rogue webhook detected: {info.url} — deleting")
                 await app.bot.delete_webhook(drop_pending_updates=True)
         except Exception as e:
             print(f"[SECURITY] watchdog error: {e}")
         await asyncio.sleep(30)
+
+# ══════════════════════════════════════════════
+#               NON-BLOCKING HTTP HELPERS
+# ══════════════════════════════════════════════
+
+async def _blocking_get(url, timeout_sec):
+    """Run requests.get in a thread so the event loop stays responsive."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: requests.get(url, timeout=timeout_sec))
+
+
+async def fetch_api1_with_polling(url, max_attempts=6, wait_seconds=15, per_timeout=30):
+    """
+    Polls API 1 until real data is returned or definitively failed.
+    Handles async "processing" style APIs.
+    Returns: (status, data_dict, raw_text, attempts_used)
+    """
+    last_raw = ""
+    last_data = {}
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = await _blocking_get(url, per_timeout)
+            raw = response.text.strip()
+            last_raw = raw
+
+            if not raw:
+                if attempt < max_attempts:
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                return ("empty", {}, "", attempt)
+
+            try:
+                data = json.loads(raw)
+                last_data = data
+            except json.JSONDecodeError:
+                if attempt < max_attempts:
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                return ("invalid_json", {}, raw, attempt)
+
+            success = data.get("success")
+            msg_raw = (data.get("message") or data.get("msg") or data.get("error") or data.get("detail") or "")
+            msg_lower = str(msg_raw).lower()
+            results = data.get("results") or data.get("result") or []
+
+            # Explicit success with results
+            if success is True:
+                if results:
+                    return ("success", data, raw, attempt)
+                else:
+                    # success:true with empty results → treat as not found
+                    return ("not_found", data, raw, attempt)
+
+            # Detect "processing" signals → retry
+            processing_kw = [
+                "processing", "please wait", "retry", "queued", "in progress",
+                "try again", "loading", "being fetched", "fetching", "on the way",
+                "wait for", "please retry", "still"
+            ]
+            if any(k in msg_lower for k in processing_kw):
+                if attempt < max_attempts:
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                return ("processing_timeout", data, raw, attempt)
+
+            # Definitive "not found"
+            not_found_kw = [
+                "not found", "no record", "no data", "no result",
+                "invalid number", "not exist", "no information", "not available"
+            ]
+            if any(k in msg_lower for k in not_found_kw):
+                return ("not_found", data, raw, attempt)
+
+            # Results exist even though success is False → treat as success
+            if results:
+                return ("success", data, raw, attempt)
+
+            # Unknown failure → retry a few times
+            if attempt < max_attempts:
+                await asyncio.sleep(wait_seconds)
+                continue
+            return ("unknown", data, raw, attempt)
+
+        except requests.exceptions.Timeout:
+            if attempt < max_attempts:
+                await asyncio.sleep(wait_seconds)
+                continue
+            return ("http_timeout", {}, last_raw, attempt)
+
+        except requests.exceptions.ConnectionError:
+            if attempt < max_attempts:
+                await asyncio.sleep(wait_seconds)
+                continue
+            return ("connection_error", {}, last_raw, attempt)
+
+        except Exception as e:
+            if attempt < max_attempts:
+                await asyncio.sleep(wait_seconds)
+                continue
+            return ("unknown", {"exception": str(e)}, last_raw, attempt)
+
+    return ("unknown", last_data, last_raw, max_attempts)
 
 # ══════════════════════════════════════════════
 #               START
@@ -345,310 +447,218 @@ async def process_number(update, context, number, api_num=1):
         await update.message.reply_text(zero_msg, parse_mode="HTML", reply_markup=insufficient_credits_kb())
         return
 
-    # ── Inform the user that the search has started (API 1 only) ──
+    # ── Inform the user that the search has started ──
+    await update.message.reply_text(
+        f"🔍 <b>Searching for the number</b> <code>{number}</code>...\n"
+        "⏳ <i>Please wait, this may take up to 2 minutes.</i>",
+        parse_mode="HTML"
+    )
+
+    # ── Build URL ──
     if api_num == 1:
-        await update.message.reply_text(
-            f"🔍 <b>Searching for the number</b> <code>{number}</code>...\n"
-            "⏳ <i>Please wait, this may take up to a minute.</i>",
-            parse_mode="HTML"
+        url = API_URL.format(number)
+        if not url.startswith("http"):
+            url = "https://" + url
+    else:
+        url = API_URL2.format(number)
+
+    # ═══════════════════════════════════════════
+    #           API 1 — POLLING FLOW
+    # ═══════════════════════════════════════════
+    if api_num == 1:
+        status, data, raw, attempts = await fetch_api1_with_polling(
+            url, max_attempts=6, wait_seconds=15, per_timeout=30
         )
 
-    try:
-        if api_num == 1:
-            url = API_URL.format(number)
-            if not url.startswith("http"):
-                url = "https://" + url
-            timeout_val = 60
-        else:
-            url = API_URL2.format(number)
-            timeout_val = 10
+        if status == "success":
+            # Force success flag so processing continues normally
+            if not data.get("success"):
+                data["success"] = True
 
-        response = requests.get(url, timeout=timeout_val)
-        result   = response.text.strip()
-
-        if not result:
-            await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
-            return
-
-        deduct_credits = True
-        try:
-            data = json.loads(result)
-
-            # --- API 2 error handling (no credits deducted) ---
-            if api_num == 2:
-                if data.get("status") == False and "Daily limit exceeded" in data.get("error", ""):
-                    await update.message.reply_text(
-                        "❌ <b>TG API Limit Reached</b>\n\nDaily limit exceeded. Please try again later.\n<i>No credits deducted.</i>",
-                        parse_mode="HTML"
-                    )
-                    return
-                if data.get("success") == False:
-                    msg_text = data.get("msg", "")
-                    if "Phone number not found" in msg_text or "not found" in msg_text.lower():
-                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
-                        return
-                r = data.get("result", {})
-                if r.get("status") == False:
-                    err = r.get("error", "") or r.get("msg", "")
-                    if "not found" in err.lower() or "wait" in err.lower():
-                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
-                        return
-
-            # --- API 1 specific handling ---
-            if api_num == 1:
-                if not data.get("success"):
-                    await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available for this number.", parse_mode="HTML")
-                    return
-                data["credit"] = {
-                    "name": "Dark Galaxy",
-                    "developer": "@DarkGalaxxyy",
-                    "contact": "@DarkGalaxxyy",
-                    "footer": "Powered by @Siee1234"
-                }
-
-            # === Replace tag if present ===
+            # Brand override
+            data["credit"] = {
+                "name": "Dark Galaxy",
+                "developer": "@DarkGalaxxyy",
+                "contact": "@DarkGalaxxyy",
+                "footer": "Powered by @Siee1234"
+            }
             if "tag" in data:
                 data["tag"] = "@DarkGalaxxyy"
 
-            # === Deduct credits (unless unlimited) ===
-            if deduct_credits:
-                if UNLIMITED_MODE:
-                    credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
-                else:
-                    new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
-
-            # === Prepare file and summary ===
-            pretty = json.dumps(data, indent=2, ensure_ascii=False)
-            if api_num == 1:
-                total = data.get("total_results", len(data.get("results", [])))
-                summary = f"📞 <b>Number Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔢 Number: <code>{number}</code>\n📊 Records found: <b>{total}</b>\n\n{credit_note}"
+            # Deduct credits
+            if UNLIMITED_MODE:
+                credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
             else:
-                summary = f"🔎 <b>TG Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n{credit_note}"
+                new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
+                credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
 
-            file_name = f"{number}.txt"
+            # Build file + summary
+            pretty = json.dumps(data, indent=2, ensure_ascii=False)
+            total = data.get("total_results", len(data.get("results", [])))
+            summary = (
+                f"📞 <b>Number Search Result</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔢 Number: <code>{number}</code>\n"
+                f"📊 Records found: <b>{total}</b>\n\n"
+                f"{credit_note}"
+            )
             file_bytes = BytesIO(pretty.encode("utf-8"))
-            file_bytes.name = file_name
-
+            file_bytes.name = f"{number}.txt"
             await bot.send_document(
                 chat_id=update.effective_chat.id,
                 document=file_bytes,
                 caption=summary,
                 parse_mode="HTML"
             )
+            return
 
-        except json.JSONDecodeError:
-            if deduct_credits:
-                if not UNLIMITED_MODE:
-                    new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
-                else:
-                    credit_note = "♾️ <i>Unlimited Mode ON</i>"
-            else:
-                credit_note = "<i>No credits deducted.</i>"
-
-            file_name = f"{number}.txt"
-            file_bytes = BytesIO(result.encode("utf-8"))
-            file_bytes.name = file_name
-            await bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=file_bytes,
-                caption=f"📄 <b>Raw Response</b>\n\n{credit_note}",
-                parse_mode="HTML"
-            )
-
-    except requestsasync def process_number(update, context, number, api_num=1):
-    user_id   = update.effective_user.id
-    chat_type = update.effective_chat.type
-    bot       = context.bot
-
-    if MODE == "maintenance":
-        await update.message.reply_text("<b>🔧 Maintenance Mode</b>\n\nBot is under maintenance. Please try again later.", parse_mode="HTML")
-        return
-    if MODE == "group" and chat_type == "private":
-        await update.message.reply_text("⚠️ This bot only works in groups.")
-        return
-    if MODE == "private" and chat_type in ["group", "supergroup"]:
-        await update.message.reply_text("⚠️ This bot only works in private chat.")
-        return
-
-    joined = await force_join_check(bot, user_id)
-    if not joined:
-        await update.message.reply_text("⚠️ <b>Access Restricted</b>\n\nJoin all required channels first.", parse_mode="HTML", reply_markup=join_keyboard())
-        return
-
-    user = await get_user(user_id)
-    if user is None:
-        user = await create_user(user_id)
-
-    if user.get("banned"):
-        await update.message.reply_text("🚫 You have been banned from using this bot.")
-        return
-
-    if not UNLIMITED_MODE and user["credits"] <= 0:
-        zero_msg = (
-            "❌ <b>Insufficient Credits</b>\n\n"
-            "You have <b>0 credits</b> remaining.\n\n"
-            "💡 <b>Ways to earn credits:</b>\n"
-            "• Refer friends → 🔗 Refer button\n"
-            "• Redeem a voucher → <code>/redeem</code>\n"
-            "• Purchase credits → 💳 Buy Credits\n\n"
-            "Use the buttons below:"
-        )
-        await update.message.reply_text(zero_msg, parse_mode="HTML", reply_markup=insufficient_credits_kb())
-        return
-
-    # ── Inform the user that the search has started (API 1 only) ──
-    if api_num == 1:
-        await update.message.reply_text(
-            f"🔍 <b>Searching for the number</b> <code>{number}</code>...\n"
-            "⏳ <i>Please wait, this may take up to 2 minutes.</i>",
-            parse_mode="HTML"
-        )
-
-    try:
-        if api_num == 1:
-            url = API_URL.format(number)
-            if not url.startswith("http"):
-                url = "https://" + url
-            timeout_val = 120   # ← increased from 60 to 120 seconds
-        else:
-            url = API_URL2.format(number)
-            timeout_val = 10
-
-        response = requests.get(url, timeout=timeout_val)
-        result   = response.text.strip()
-
-        if not result:
+        if status == "not_found":
+            api_msg = data.get("message") or data.get("msg") or "No records found for this number."
             await update.message.reply_text(
-                f"❌ <b>Empty Response</b>\n\n"
-                f"The API returned an empty body.\n"
-                f"<i>HTTP status: {response.status_code}</i>",
+                f"❌ <b>No Result Found</b>\n\n"
+                f"<b>API says:</b> {api_msg}",
                 parse_mode="HTML"
             )
             return
 
-        deduct_credits = True
-        try:
-            data = json.loads(result)
-
-            # --- API 2 error handling (no credits deducted) ---
-            if api_num == 2:
-                if data.get("status") == False and "Daily limit exceeded" in data.get("error", ""):
-                    await update.message.reply_text(
-                        "❌ <b>TG API Limit Reached</b>\n\nDaily limit exceeded. Please try again later.\n<i>No credits deducted.</i>",
-                        parse_mode="HTML"
-                    )
-                    return
-                if data.get("success") == False:
-                    msg_text = data.get("msg", "")
-                    if "Phone number not found" in msg_text or "not found" in msg_text.lower():
-                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
-                        return
-                r = data.get("result", {})
-                if r.get("status") == False:
-                    err = r.get("error", "") or r.get("msg", "")
-                    if "not found" in err.lower() or "wait" in err.lower():
-                        await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
-                        return
-
-            # --- API 1 specific handling (robust) ---
-            if api_num == 1:
-                results       = data.get("results") or data.get("result") or []
-                success_flag  = data.get("success")
-                api_error     = (
-                    data.get("error")
-                    or data.get("message")
-                    or data.get("msg")
-                    or data.get("detail")
-                    or ""
-                )
-
-                # Explicit failure from API
-                if success_flag is False:
-                    await update.message.reply_text(
-                        f"❌ <b>Search Failed</b>\n\n"
-                        f"<b>API says:</b> <code>{api_error or 'Unknown error'}</code>\n\n"
-                        f"<i>Full response:</i>\n<code>{result[:400]}</code>",
-                        parse_mode="HTML"
-                    )
-                    return
-
-                # No records found
-                if not results:
-                    await update.message.reply_text(
-                        f"❌ <b>No Result Found</b>\n\n"
-                        f"<b>API says:</b> <code>{api_error or 'No data available for this number.'}</code>",
-                        parse_mode="HTML"
-                    )
-                    return
-
-                # ✅ Real results
-                data["credit"] = {
-                    "name": "Dark Galaxy",
-                    "developer": "@DarkGalaxxyy",
-                    "contact": "@DarkGalaxxyy",
-                    "footer": "Powered by @Siee1234"
-                }
-
-            # === Replace tag if present ===
-            if "tag" in data:
-                data["tag"] = "@DarkGalaxxyy"
-
-            # === Deduct credits (unless unlimited) ===
-            if deduct_credits:
-                if UNLIMITED_MODE:
-                    credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
-                else:
-                    new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
-
-            # === Prepare file and summary ===
-            pretty = json.dumps(data, indent=2, ensure_ascii=False)
-            if api_num == 1:
-                total = data.get("total_results", len(data.get("results", [])))
-                summary = f"📞 <b>Number Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔢 Number: <code>{number}</code>\n📊 Records found: <b>{total}</b>\n\n{credit_note}"
-            else:
-                summary = f"🔎 <b>TG Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n{credit_note}"
-
-            file_name = f"{number}.txt"
-            file_bytes = BytesIO(pretty.encode("utf-8"))
-            file_bytes.name = file_name
-
-            await bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=file_bytes,
-                caption=summary,
+        if status == "processing_timeout":
+            api_msg = data.get("message") or data.get("msg") or "API still processing"
+            await update.message.reply_text(
+                f"⏱ <b>API Still Processing</b>\n\n"
+                f"Tried <b>{attempts}</b> times but the API hasn't finished.\n\n"
+                f"<b>Last message:</b> {api_msg}\n\n"
+                f"<i>Please try again in a minute.</i>",
                 parse_mode="HTML"
             )
+            return
 
-        except json.JSONDecodeError:
-            # Not JSON — show raw response as file for debugging
-            if deduct_credits:
-                if not UNLIMITED_MODE:
-                    new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
-                    credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
-                else:
-                    credit_note = "♾️ <i>Unlimited Mode ON</i>"
-            else:
-                credit_note = "<i>No credits deducted.</i>"
-
-            file_name = f"{number}.txt"
-            file_bytes = BytesIO(result.encode("utf-8"))
-            file_bytes.name = file_name
-            await bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=file_bytes,
-                caption=f"📄 <b>Raw Response (not JSON)</b>\n\n{credit_note}",
+        if status == "http_timeout":
+            await update.message.reply_text(
+                "⏱ <b>API Timeout</b>\n\nThe API didn't respond in time. Please try again.",
                 parse_mode="HTML"
             )
+            return
 
+        if status == "connection_error":
+            await update.message.reply_text(
+                "📡 <b>Connection Error</b>\n\nCould not reach the API. Please try again.",
+                parse_mode="HTML"
+            )
+            return
+
+        if status == "empty":
+            await update.message.reply_text(
+                "❌ <b>Empty Response</b>\n\nThe API returned an empty response after multiple attempts.",
+                parse_mode="HTML"
+            )
+            return
+
+        if status == "invalid_json":
+            excerpt = (raw[:500] + "…") if len(raw) > 500 else raw
+            await update.message.reply_text(
+                f"❌ <b>Invalid API Response</b>\n\n"
+                f"The API returned non-JSON data.\n\n"
+                f"<b>Raw (first 500 chars):</b>\n<code>{excerpt}</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        # unknown / any other status
+        excerpt = (raw[:500] + "…") if len(raw) > 500 else raw
+        api_msg = data.get("message") or data.get("msg") or data.get("error") or "(no message)"
+        await update.message.reply_text(
+            f"❌ <b>Unexpected API Response</b>\n\n"
+            f"<b>Message:</b> {api_msg}\n\n"
+            f"<b>Raw (first 500 chars):</b>\n<code>{excerpt}</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    # ═══════════════════════════════════════════
+    #           API 2 — SINGLE REQUEST FLOW
+    # ═══════════════════════════════════════════
+    try:
+        response = await _blocking_get(url, 15)
+        result = response.text.strip()
     except requests.exceptions.Timeout:
-        await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nThe API took too long (over 2 minutes). Please try again.", parse_mode="HTML")
+        await update.message.reply_text("⏱ <b>Request Timed Out</b>\n\nPlease try again.", parse_mode="HTML")
+        return
     except requests.exceptions.ConnectionError:
         await update.message.reply_text("📡 <b>Connection Error</b>\n\nUnable to connect to the API.", parse_mode="HTML")
+        return
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
+        return
+
+    if not result:
+        await update.message.reply_text("❌ <b>No Result Found</b>\n\nNo data available.", parse_mode="HTML")
+        return
+
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        excerpt = (result[:500] + "…") if len(result) > 500 else result
+        await update.message.reply_text(
+            f"❌ <b>Invalid API Response</b>\n\n<code>{excerpt}</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    # API 2 specific error handling
+    if data.get("status") == False and "Daily limit exceeded" in data.get("error", ""):
+        await update.message.reply_text(
+            "❌ <b>TG API Limit Reached</b>\n\nDaily limit exceeded. Please try again later.\n<i>No credits deducted.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("success") == False:
+        msg_text = data.get("msg", "")
+        if "Phone number not found" in msg_text or "not found" in msg_text.lower():
+            await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{msg_text}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
+            return
+
+    r = data.get("result", {})
+    if r.get("status") == False:
+        err = r.get("error", "") or r.get("msg", "")
+        if "not found" in err.lower() or "wait" in err.lower():
+            await update.message.reply_text(f"❌ <b>TG Lookup Failed</b>\n\n{err}\n\n<i>No credits deducted.</i>", parse_mode="HTML")
+            return
+
+    # Replace tag if present
+    if "tag" in data:
+        data["tag"] = "@DarkGalaxxyy"
+
+    # Deduct credits
+    if UNLIMITED_MODE:
+        credit_note = "♾️ <i>Unlimited Mode — no credits deducted</i>"
+    else:
+        new_balance = await update_credits(user_id, -DEDUCTION_CREDITS)
+        credit_note = f"💰 <i>Credits remaining: {new_balance}</i>"
+
+    pretty = json.dumps(data, indent=2, ensure_ascii=False)
+    summary = f"🔎 <b>TG Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n{credit_note}"
+
+    file_bytes = BytesIO(pretty.encode("utf-8"))
+    file_bytes.name = f"{number}.txt"
+    await bot.send_document(
+        chat_id=update.effective_chat.id,
+        document=file_bytes,
+        caption=summary,
+        parse_mode="HTML"
+    )
+
+async def num(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("📌 <b>Usage:</b> <code>/num &lt;number&gt;</code>\n\n<b>Example:</b> <code>/num 9876543210</code>", parse_mode="HTML")
+        return
+    await process_number(update, context, context.args[0], api_num=1)
+
+async def tgnum(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("📌 <b>Usage:</b> <code>/tgnum &lt;number&gt;</code>\n\n<b>Example:</b> <code>/tgnum 6116352810</code>", parse_mode="HTML")
+        return
+    await process_number(update, context, context.args[0], api_num=2)
 
 # ══════════════════════════════════════════════
 #               VEHICLE SEARCH
@@ -697,7 +707,7 @@ async def process_vehicle(update, context, rc_number):
 
     try:
         url      = VEHICLE_API.format(rc_number.upper())
-        response = requests.get(url, timeout=15)
+        response = await _blocking_get(url, 15)
         data     = response.json()
 
         values = [v for k, v in data.items() if k != "copyright"]
@@ -722,10 +732,8 @@ async def process_vehicle(update, context, rc_number):
         pretty = json.dumps(data, indent=2, ensure_ascii=False)
         summary = f"🚗 <b>Vehicle Search Result</b>\n━━━━━━━━━━━━━━━━━━━━\n🔖 Reg No: <code>{rc_number}</code>\n\n{credit_note}"
 
-        file_name = f"{rc_number}.txt"
         file_bytes = BytesIO(pretty.encode("utf-8"))
-        file_bytes.name = file_name
-
+        file_bytes.name = f"{rc_number}.txt"
         await bot.send_document(
             chat_id=update.effective_chat.id,
             document=file_bytes,
@@ -1821,7 +1829,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📊 <b>Bot Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👤 Total Users: <b>{total_users}</b>\n"
+        f"👤 Total Users: <b>{total Users: <b>{total_users}</b>\n"
         f"✅ Joined Users: <b>{joined_users}</b>\n"
         f"⏳ Only Started: <b>{only_start}</b>\n\n"
         f"💰 Total Credits: <b>{total_credits}</b>\n"
